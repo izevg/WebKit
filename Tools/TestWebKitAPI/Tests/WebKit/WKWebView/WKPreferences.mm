@@ -32,6 +32,7 @@
 #import <WebKit/WKFoundation.h>
 #import <WebKit/WKPreferencesPrivate.h>
 #import <WebKit/WKWebViewConfigurationPrivate.h>
+#import <WebKit/_WKFeature.h>
 #import <wtf/ObjCRuntimeExtras.h>
 
 @interface WKPreferencesMessageHandler : NSObject <WKScriptMessageHandler>
@@ -309,4 +310,22 @@ TEST(WKPreferences, UInt32TypeMismatchDoesNotCrash)
 
     // Restore original implementation.
     method_setImplementation(method, originalObjectForKeyIMP);
+}
+
+TEST(WKPreferences, TrackerlessDefaults)
+{
+    // A fresh WKPreferences must not make network requests the user did not ask for.
+    RetainPtr preferences = adoptNS([WKPreferences new]);
+    EXPECT_FALSE([preferences isFraudulentWebsiteWarningEnabled]);
+    EXPECT_FALSE([preferences _privateClickMeasurementEnabled]);
+
+    bool foundSpeculationRulesPrefetch = false;
+    for (_WKFeature *feature in [WKPreferences _features]) {
+        if (![feature.key isEqualToString:@"SpeculationRulesPrefetchEnabled"])
+            continue;
+        foundSpeculationRulesPrefetch = true;
+        EXPECT_FALSE(feature.defaultValue);
+        EXPECT_FALSE([preferences _isEnabledForFeature:feature]);
+    }
+    EXPECT_TRUE(foundSpeculationRulesPrefetch);
 }

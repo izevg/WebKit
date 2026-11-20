@@ -132,6 +132,7 @@ const TestFeatures& TestOptions::defaults()
             { "PeerConnectionVideoScalingAdaptationDisabled", true },
             { "PerElementSpeakerSelectionEnabled", true },
             { "PDFJSViewerEnabled", false },
+            { "PrivateClickMeasurementEnabled", true },
             { "PushAPIEnabled", true },
             { "RequiresUserGestureForAudioPlayback", false },
             { "RequiresUserGestureForMediaPlayback", false },
