@@ -13128,7 +13128,7 @@ void WebPageProxy::transcodeChosenFiles(IPC::Connection& connection, Vector<Stri
         process->send(Messages::WebPage::ExtendSandboxForFilesFromOpenPanel(WTF::move(sandboxExtensionHandles)), protectedThis->webPageIDInProcess(process.get()));
 #endif
 
-        protectedThis->protectedWebsiteDataStore()->protectedNetworkProcess()->sendWithAsyncReply(Messages::NetworkProcess::AllowFilesAccessFromWebProcess(process->coreProcessIdentifier(), transcodedPaths), [replacementPaths = WTF::move(replacementPaths), completionHandler = WTF::move(completionHandler)]() mutable {
+        protect(protect(protectedThis->websiteDataStore())->networkProcess())->sendWithAsyncReply(Messages::NetworkProcess::AllowFilesAccessFromWebProcess(process->coreProcessIdentifier(), transcodedPaths), [replacementPaths = WTF::move(replacementPaths), completionHandler = WTF::move(completionHandler)]() mutable {
             completionHandler(WTF::move(replacementPaths));
         });
     });
