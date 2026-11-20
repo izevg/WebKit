@@ -97,6 +97,7 @@ class WebProcessPool;
 
 #if ENABLE(REMOTE_INSPECTOR)
 class InspectorPassthroughChannel;
+class LocalAutomationClientChannel;
 #endif
 
 #if ENABLE(WEBDRIVER_BIDI)
@@ -215,6 +216,25 @@ public:
     void init();
     bool NODELETE isPaired() const;
     bool NODELETE isPendingTermination() const;
+
+    // In-process automation client: an embedder drives the session directly,
+    // without a RemoteInspector transport (no webinspectord, no TCP port).
+    // Outbound messages (responses and events) reach the handler asynchronously
+    // on the main run loop, in order; messages still queued when the client
+    // disconnects are dropped. A session with a local client is never
+    // advertised to RemoteInspector, so connectLocalClient() must precede
+    // WebProcessPool::setAutomationSession(); it fails once the session has a
+    // remote frontend or has been registered as a remote target.
+    bool connectLocalClient(Function<void(const String&)>&& messageHandler);
+    void disconnectLocalClient();
+    // Returns false if no local client is connected or the session has no
+    // process pool yet; the message is not dispatched then.
+    bool dispatchMessageFromLocalClient(String&& message);
+    bool hasLocalClient() const { return !!m_localClientChannel; }
+
+    // Allows Automation.sendInspectorMessage without the client's
+    // shouldEnableInspectorTesting() gate.
+    void setInspectorPassthroughEnabled(bool enabled) { m_inspectorPassthroughEnabled = enabled; }
 #endif
 
     void terminate();
@@ -488,6 +508,9 @@ private:
 #if ENABLE(REMOTE_INSPECTOR)
     Inspector::FrontendChannel* m_remoteChannel { nullptr };
     const Ref<Debuggable> m_debuggable;
+    std::unique_ptr<LocalAutomationClientChannel> m_localClientChannel;
+    bool m_isLocalSession { false };
+    bool m_inspectorPassthroughEnabled { false };
 #endif
 
     // Web Inspector backend passthrough: clients with the
