@@ -39,6 +39,11 @@ WK_CLASS_AVAILABLE(macos(10.13.4), ios(12.2))
 @property (nonatomic) BOOL siteIsolationEnabled;
 @property (nonatomic) BOOL navigatorWebDriverEnabled;
 
+/// Allows Automation.sendInspectorMessage (Web Inspector protocol passthrough to
+/// a controlled page) without the delegate's -_automationSessionShouldEnableInspectorTesting:.
+/// Read when the session is created. Defaults to NO.
+@property (nonatomic) BOOL inspectorPassthroughEnabled WK_API_AVAILABLE(macos(WK_MAC_TBA), ios(WK_IOS_TBA), visionos(WK_XROS_TBA));
+
 @end
 
 NS_ASSUME_NONNULL_END

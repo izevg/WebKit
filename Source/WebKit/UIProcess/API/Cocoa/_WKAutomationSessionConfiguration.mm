@@ -41,6 +41,7 @@
     _alwaysAllowAutoplay = NO;
     _siteIsolationEnabled = NO;
     _navigatorWebDriverEnabled = YES;
+    _inspectorPassthroughEnabled = NO;
 
     return self;
 }
@@ -55,6 +56,7 @@
     configuration.get().alwaysAllowAutoplay = self.alwaysAllowAutoplay;
     configuration.get().siteIsolationEnabled = self.siteIsolationEnabled;
     configuration.get().navigatorWebDriverEnabled = self.navigatorWebDriverEnabled;
+    configuration.get().inspectorPassthroughEnabled = self.inspectorPassthroughEnabled;
 
     return configuration.leakRef();
 }

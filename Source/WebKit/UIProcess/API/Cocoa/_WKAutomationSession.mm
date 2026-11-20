@@ -33,6 +33,7 @@
 #import "_WKAutomationSessionConfiguration.h"
 #import "_WKAutomationSessionDelegate.h"
 #import <WebCore/WebCoreObjCExtras.h>
+#import <wtf/BlockPtr.h>
 #import <wtf/WeakObjCPtr.h>
 
 @implementation _WKAutomationSession {
@@ -53,6 +54,10 @@
     API::Object::constructInWrapper<WebKit::WebAutomationSession>(self);
 
     _configuration = adoptNS([configuration copy]);
+
+#if ENABLE(REMOTE_INSPECTOR)
+    protect(*_session)->setInspectorPassthroughEnabled(configuration.inspectorPassthroughEnabled);
+#endif
 
     return self;
 }
@@ -112,6 +117,41 @@
 - (void)terminate
 {
     protect(*_session)->terminate();
+}
+
+- (BOOL)connectLocalClient:(void (^)(NSString *))messageHandler
+{
+#if ENABLE(REMOTE_INSPECTOR)
+    if (!messageHandler)
+        return NO;
+
+    return protect(*_session)->connectLocalClient([handler = makeBlockPtr(messageHandler)](const String& message) {
+        handler(message.createNSString().get());
+    });
+#else
+    UNUSED_PARAM(messageHandler);
+    return NO;
+#endif
+}
+
+- (BOOL)dispatchMessage:(NSString *)message
+{
+#if ENABLE(REMOTE_INSPECTOR)
+    if (!message)
+        return NO;
+
+    return protect(*_session)->dispatchMessageFromLocalClient(String { message });
+#else
+    UNUSED_PARAM(message);
+    return NO;
+#endif
+}
+
+- (void)disconnectLocalClient
+{
+#if ENABLE(REMOTE_INSPECTOR)
+    protect(*_session)->disconnectLocalClient();
+#endif
 }
 
 #if PLATFORM(MAC)
