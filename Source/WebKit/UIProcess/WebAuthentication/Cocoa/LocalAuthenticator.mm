@@ -71,8 +71,12 @@ static inline String groupForAttributes(NSDictionary *attributes)
 
 static bool shouldUpdateQuery()
 {
+    // ENABLE(WEB_AUTHN_OWN_MANAGER): always WebKit's own store, device-bound Secure Enclave keys in
+    // localAuthenticatorAccessGroup(), whatever AuthenticationServicesCore would choose for Apple's browsers.
+#if !ENABLE(WEB_AUTHN_OWN_MANAGER)
     if (WebKit::getASCWebKitSPISupportClassSingleton())
         return [WebKit::getASCWebKitSPISupportClassSingleton() shouldUseAlternateCredentialStore];
+#endif
 
     return false;
 }
@@ -110,7 +114,7 @@ using CBOR = cbor::CBORValue;
 
 BOOL shouldUseAlternateKeychainAttribute()
 {
-#if HAVE(UNIFIED_ASC_AUTH_UI)
+#if HAVE(UNIFIED_ASC_AUTH_UI) && !ENABLE(WEB_AUTHN_OWN_MANAGER)
     if (![WebKit::getASCWebKitSPISupportClassSingleton() respondsToSelector:@selector(shouldUseAlternateKeychainAttribute)])
         return NO;
 
@@ -264,7 +268,12 @@ static inline Ref<ArrayBuffer> toArrayBuffer(std::span<const uint8_t> data)
 
 static Vector<AuthenticatorTransport> transports()
 {
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    // The credential is bound to this Mac's Secure Enclave; no phone can reach it over hybrid.
+    Vector<WebCore::AuthenticatorTransport> transports = { WebCore::AuthenticatorTransport::Internal };
+#else
     Vector<WebCore::AuthenticatorTransport> transports = { WebCore::AuthenticatorTransport::Hybrid, WebCore::AuthenticatorTransport::Internal };
+#endif
     return transports;
 }
 
@@ -276,7 +285,7 @@ void LocalAuthenticator::clearAllCredentials()
     auto query = adoptNS([[NSMutableDictionary alloc] init]);
     [query setDictionary:@{
         (id)kSecClass: (id)kSecClassKey,
-        (id)kSecAttrAccessGroup: LocalAuthenticatorAccessGroup,
+        (id)kSecAttrAccessGroup: WebCore::localAuthenticatorAccessGroup(),
         (id)kSecUseDataProtectionKeychain: @YES
     }];
     updateQueryIfNecessary(query.get());
@@ -662,6 +671,10 @@ void LocalAuthenticator::continueMakeCredentialAfterUserVerification(SecAccessCo
     // Skip attestation.
     auto authData = buildAuthData(creationOptions.rp.id, flags, counter, buildAttestedCredentialData(aaguidVector(), credentialId, cosePublicKey));
 
+    // ENABLE(WEB_AUTHN_OWN_MANAGER): no enterprise attestation identity exists without
+    // AuthenticationServices, so every preference gets the "none" attestation below, as the spec
+    // allows, instead of a failed or empty attestation object.
+#if !ENABLE(WEB_AUTHN_OWN_MANAGER)
     if (creationOptions.attestation == AttestationConveyancePreference::Enterprise) {
         auto callback = [credentialId = WTF::move(credentialId), weakThis = WeakPtr { *this }] (Vector<uint8_t>&& attestationObject, std::optional<ExceptionData> exception) mutable {
             ASSERT(RunLoop::isMain());
@@ -674,8 +687,15 @@ void LocalAuthenticator::continueMakeCredentialAfterUserVerification(SecAccessCo
         performEnterpriseAttestation(creationOptions, WTF::move(authData), requestData().hash, WTF::move(callback));
         return;
     }
+#endif // !ENABLE(WEB_AUTHN_OWN_MANAGER)
 
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    // A zero AAGUID: the built-in one is registered as Apple's iCloud Keychain, and relying
+    // parties would label this device-bound credential as a synced iCloud passkey.
+    auto attestationObject = buildAttestationObject(WTF::move(authData), String { emptyString() }, { }, AttestationConveyancePreference::None, WebCore::ShouldZeroAAGUID::Yes);
+#else
     auto attestationObject = buildAttestationObject(WTF::move(authData), String { emptyString() }, { }, AttestationConveyancePreference::None);
+#endif
 
     finishMakeCredential(WTF::move(credentialId), WTF::move(attestationObject), std::nullopt);
 }

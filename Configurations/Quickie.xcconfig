@@ -1,0 +1,33 @@
+// Copyright (C) 2026 The Quickie authors. All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions
+// are met:
+// 1. Redistributions of source code must retain the above copyright
+//    notice, this list of conditions and the following disclaimer.
+// 2. Redistributions in binary form must reproduce the above copyright
+//    notice, this list of conditions and the following disclaimer in the
+//    documentation and/or other materials provided with the distribution.
+//
+// THIS SOFTWARE IS PROVIDED BY THE AUTHORS ``AS IS'' AND ANY
+// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+// PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR
+// ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+// OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+// STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+// ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+
+// Build settings of the Quickie fork (github.com/izevg/WebKit, branches quickie/*).
+// CommonBase.xcconfig includes this file, so every project of the Cocoa build sees
+// QUICKIE_GCC_PREPROCESSOR_DEFINITIONS.
+
+// ENABLE(WEB_AUTHN_OWN_MANAGER): Web Authentication requests from web pages go to WebKit's own
+// AuthenticatorManager (USB/HID and CCID security keys, the Secure Enclave local authenticator)
+// and the embedder's _WKWebAuthenticationPanel UI, never to AuthenticationServices. Quickie is
+// distributed with Developer ID and does not hold Apple's web-browser public-key-credential
+// entitlement, without which AuthenticationServices refuses arbitrary relying parties.
+QUICKIE_GCC_PREPROCESSOR_DEFINITIONS[sdk=macosx*] = ENABLE_WEB_AUTHN_OWN_MANAGER=1;

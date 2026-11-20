@@ -25,6 +25,11 @@
 
 #pragma once
 
+#if defined(__OBJC__)
+#include <wtf/NeverDestroyed.h>
+#include <wtf/RetainPtr.h>
+#endif
+
 namespace COSE {
 
 // See RFC 8152 - CBOR Object Signing and Encryption <https://tools.ietf.org/html/rfc8152>
@@ -89,7 +94,23 @@ enum class ShouldZeroAAGUID : bool {
 };
 
 #if defined(__OBJC__)
-NSString * const LocalAuthenticatorAccessGroup = @"com.apple.webkit.webauthn";
+// The keychain access group that holds the local (Secure Enclave) authenticator's credentials.
+// An embedder that cannot use WebKit's own group names one its keychain-access-groups entitlement
+// grants with the Info.plist key QuickieWebAuthnAccessGroup of its main bundle, for example
+// "<TEAMID>.app.quickie.webauthn". Read once per process; the UI process is the one that uses it.
+inline RetainPtr<NSString> localAuthenticatorAccessGroupFromMainBundle()
+{
+    id value = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"QuickieWebAuthnAccessGroup"];
+    if ([value isKindOfClass:[NSString class]] && [(NSString *)value length])
+        return (NSString *)value;
+    return @"com.apple.webkit.webauthn";
+}
+
+inline NSString *localAuthenticatorAccessGroup()
+{
+    static NeverDestroyed<RetainPtr<NSString>> accessGroup = localAuthenticatorAccessGroupFromMainBundle();
+    return accessGroup.get().get();
+}
 #endif
 
 // Credential serialization

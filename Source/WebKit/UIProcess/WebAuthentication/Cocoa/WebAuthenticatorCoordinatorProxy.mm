@@ -1308,13 +1308,38 @@ static inline void getArePasskeysDisallowedForRelyingParty(const WebCore::Securi
 
 void WebAuthenticatorCoordinatorProxy::isConditionalMediationAvailable(const WebCore::SecurityOriginData& data, QueryCompletionHandler&& handler)
 {
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    // The embedder's panel has no autofill account picker; handleRequest() rejects conditional requests.
+    UNUSED_PARAM(data);
+    handler(false);
+#else
     getCanCurrentProcessAccessPasskeyForRelyingParty(data, [handler = WTF::move(handler)](bool canAccessPasskeyData) mutable {
         handler(canAccessPasskeyData && [getASCWebKitSPISupportClassSingleton() shouldUseAlternateCredentialStore]);
     });
+#endif
 }
 
 void WebAuthenticatorCoordinatorProxy::getClientCapabilities(const WebCore::SecurityOriginData& originData, CapabilitiesCompletionHandler&& handler)
 {
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    // What WebKit's own authenticators can do, not what AuthenticationServices would claim:
+    // no hybrid (phone) transport, no conditional mediation, no signal API, no related origins.
+    // Sorted by key, like the AuthenticationServices answer.
+    UNUSED_PARAM(originData);
+    bool hasLocalAuthenticator = LocalService::isAvailable();
+    Vector<KeyValuePair<String, bool>> capabilities {
+        { "conditionalCreate"_s, false },
+        { "conditionalGet"_s, false },
+        { "hybridTransport"_s, false },
+        { "passkeyPlatformAuthenticator"_s, hasLocalAuthenticator },
+        { "relatedOrigins"_s, false },
+        { "signalAllAcceptedCredentials"_s, false },
+        { "signalCurrentUserDetails"_s, false },
+        { "signalUnknownCredential"_s, false },
+        { "userVerifyingPlatformAuthenticator"_s, hasLocalAuthenticator },
+    };
+    handler(WTF::move(capabilities));
+#else
     if (![getASCWebKitSPISupportClassSingleton() respondsToSelector:@selector(getClientCapabilitiesForRelyingParty:withCompletionHandler:)]) {
         Vector<KeyValuePair<String, bool>> capabilities;
         handler(WTF::move(capabilities));
@@ -1331,6 +1356,7 @@ void WebAuthenticatorCoordinatorProxy::getClientCapabilities(const WebCore::Secu
             handler(WTF::move(capabilities));
         });
     }).get()];
+#endif // ENABLE(WEB_AUTHN_OWN_MANAGER)
 }
 
 void WebAuthenticatorCoordinatorProxy::isUserVerifyingPlatformAuthenticatorAvailable(const SecurityOriginData& data, QueryCompletionHandler&& handler)
@@ -1340,6 +1366,11 @@ void WebAuthenticatorCoordinatorProxy::isUserVerifyingPlatformAuthenticatorAvail
         return;
     }
 
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    // The Secure Enclave local authenticator with Touch ID (LocalService), not iCloud Keychain.
+    UNUSED_PARAM(data);
+    handler(LocalService::isAvailable());
+#else
     getCanCurrentProcessAccessPasskeyForRelyingParty(data, [handler = WTF::move(handler), data](bool canAccessPasskeyData) mutable {
         if (!canAccessPasskeyData) {
             handler(false);
@@ -1362,10 +1393,16 @@ void WebAuthenticatorCoordinatorProxy::isUserVerifyingPlatformAuthenticatorAvail
             handler(!passkeysDisallowed);
         });
     });
+#endif // ENABLE(WEB_AUTHN_OWN_MANAGER)
 }
 
 void WebAuthenticatorCoordinatorProxy::cancel(CompletionHandler<void()>&& handler)
 {
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    // Requests never reach AuthenticationServices; m_proxy and m_controller stay null below.
+    cancelPendingAuthenticatorManagerRequest();
+#endif
+
 #if HAVE(WEB_AUTHN_AS_MODERN)
     if (m_completionHandler || m_delegate) {
 #else
