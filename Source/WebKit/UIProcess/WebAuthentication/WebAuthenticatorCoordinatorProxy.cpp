@@ -147,6 +147,17 @@ void WebAuthenticatorCoordinatorProxy::handleRequest(WebAuthenticationRequestDat
     if (!data.frameInfo)
         return handler({ }, AuthenticatorAttachment::Platform, ExceptionData { ExceptionCode::InvalidStateError });
 
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    // Conditional mediation needs an account picker in the page's autofill UI, which the
+    // _WKWebAuthenticationPanel API has no place for. isConditionalMediationAvailable() reports
+    // false, and a conditional request fails as the spec asks instead of opening a modal panel.
+    if (data.mediation == MediationRequirement::Conditional) {
+        Ref authenticatorManager = m_webPageProxy->websiteDataStore().authenticatorManager();
+        if (!authenticatorManager->isMock() && !authenticatorManager->isVirtual())
+            return handler({ }, AuthenticatorAttachment::Platform, ExceptionData { ExceptionCode::NotSupportedError, "Conditional mediation is not supported."_s });
+    }
+#endif
+
     auto origin = API::SecurityOrigin::create(data.frameInfo->securityOrigin);
 
     bool shouldRequestConditionalRegistration = std::holds_alternative<PublicKeyCredentialCreationOptions>(data.options) && data.mediation == MediationRequirement::Conditional;
@@ -162,7 +173,7 @@ void WebAuthenticatorCoordinatorProxy::handleRequest(WebAuthenticationRequestDat
 
         Ref authenticatorManager = protectedThis->m_webPageProxy->websiteDataStore().authenticatorManager();
         if (result) {
-#if HAVE(UNIFIED_ASC_AUTH_UI) || HAVE(WEB_AUTHN_AS_MODERN)
+#if (HAVE(UNIFIED_ASC_AUTH_UI) || HAVE(WEB_AUTHN_AS_MODERN)) && !ENABLE(WEB_AUTHN_OWN_MANAGER)
             if (!authenticatorManager->isMock() && !authenticatorManager->isVirtual()) {
                 if (!protectedThis->isASCAvailable()) {
                     handler({ }, AuthenticatorAttachment::Platform, ExceptionData { ExceptionCode::NotSupportedError, "Not implemented."_s });
@@ -174,13 +185,14 @@ void WebAuthenticatorCoordinatorProxy::handleRequest(WebAuthenticationRequestDat
                 protectedThis->performRequest(WTF::move(data), WTF::move(handler));
                 return;
             }
-#else
-            if (data.parentOrigin && !authenticatorManager->isMock() && !authenticatorManager->isVirtual()) {
-                handler({ }, (AuthenticatorAttachment)0, ExceptionData { ExceptionCode::NotAllowedError, "The origin of the document is not the same as its ancestors."_s });
-                RELEASE_LOG_ERROR(WebAuthn, "The origin of the document is not the same as its ancestors.");
-                return;
-            }
-#endif // not HAVE(UNIFIED_ASC_AUTH_UI) || HAVE(WEB_AUTHN_AS_MODERN)
+#endif // (HAVE(UNIFIED_ASC_AUTH_UI) || HAVE(WEB_AUTHN_AS_MODERN)) && !ENABLE(WEB_AUTHN_OWN_MANAGER)
+
+            // From here on WebKit's own AuthenticatorManager serves the request. A cross-origin
+            // iframe gets here only for get(): the web process lets it through when the
+            // publickey-credentials-get permissions policy allows it (create() stays same-origin),
+            // and getAssertion() checked parentOrigin against the frame's real ancestors. The
+            // client data then carries crossOrigin and topOrigin, as the spec asks, the same as on
+            // the AuthenticationServices path; no blanket rejection of cross-origin callers.
 
             RefPtr<ArrayBuffer> clientDataJSON;
             // AS API makes no difference between SameSite vs CrossOrigin
@@ -193,8 +205,13 @@ void WebAuthenticatorCoordinatorProxy::handleRequest(WebAuthenticationRequestDat
             });
             data.hash = buildClientDataJsonHash(*clientDataJSON);
 
-            authenticatorManager->handleRequest(WTF::move(data), [handler = WTF::move(handler), clientDataJSON = WTF::move(clientDataJSON)] (Variant<Ref<AuthenticatorResponse>, ExceptionData>&& result) mutable {
+            auto requestID = ++protectedThis->m_lastAuthenticatorManagerRequestID;
+            protectedThis->m_pendingAuthenticatorManagerRequestID = requestID;
+            authenticatorManager->handleRequest(WTF::move(data), [weakThis, requestID, handler = WTF::move(handler), clientDataJSON = WTF::move(clientDataJSON)] (Variant<Ref<AuthenticatorResponse>, ExceptionData>&& result) mutable {
                 ASSERT(RunLoop::isMain());
+                // Not protected with a RefPtr: this also runs from cancel() in the destructor.
+                if (weakThis && weakThis->m_pendingAuthenticatorManagerRequestID == requestID)
+                    weakThis->m_pendingAuthenticatorManagerRequestID = 0;
                 WTF::switchOn(result, [&](const Ref<AuthenticatorResponse>& response) {
                     auto responseData = response->data();
                     responseData.clientDataJSON = WTF::move(clientDataJSON);
@@ -227,10 +244,23 @@ void WebAuthenticatorCoordinatorProxy::handleRequest(WebAuthenticationRequestDat
     afterConsent(true);
 }
 
+void WebAuthenticatorCoordinatorProxy::cancelPendingAuthenticatorManagerRequest()
+{
+    if (!m_pendingAuthenticatorManagerRequestID)
+        return;
+    m_pendingAuthenticatorManagerRequestID = 0;
+    RefPtr webPageProxy = m_webPageProxy.get();
+    if (!webPageProxy)
+        return;
+    // Ends the request with NotAllowedError and dismisses the embedder's panel.
+    Ref authenticatorManager = webPageProxy->websiteDataStore().authenticatorManager();
+    authenticatorManager->cancel();
+}
 
 #if !HAVE(UNIFIED_ASC_AUTH_UI) && !HAVE(WEB_AUTHN_AS_MODERN)
 void WebAuthenticatorCoordinatorProxy::cancel(CompletionHandler<void()>&& completionHandler)
 {
+    cancelPendingAuthenticatorManagerRequest();
     completionHandler();
 }
 

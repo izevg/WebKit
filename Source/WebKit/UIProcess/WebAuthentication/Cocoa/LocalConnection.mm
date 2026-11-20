@@ -55,7 +55,9 @@ static inline String bundleName()
 
 static bool shouldUseAlternateAttributes()
 {
-#if ENABLE(SYNCED_CREDENTIALS)
+    // ENABLE(WEB_AUTHN_OWN_MANAGER): always WebKit's own store, device-bound Secure Enclave keys in
+    // localAuthenticatorAccessGroup(), whatever AuthenticationServicesCore would choose for Apple's browsers.
+#if ENABLE(SYNCED_CREDENTIALS) && !ENABLE(WEB_AUTHN_OWN_MANAGER)
     if (WebKit::getASCWebKitSPISupportClassSingleton())
         return [WebKit::getASCWebKitSPISupportClassSingleton() shouldUseAlternateCredentialStore];
 #endif

@@ -125,6 +125,13 @@ private:
 
     WeakPtr<WebPageProxy> m_webPageProxy;
 
+    // The data store's AuthenticatorManager serves one request at a time for all pages. These
+    // identify the request this page handed it while that is still pending, so that Cancel()
+    // from this page never ends another page's request.
+    uint64_t m_lastAuthenticatorManagerRequestID { 0 };
+    uint64_t m_pendingAuthenticatorManagerRequestID { 0 };
+    void cancelPendingAuthenticatorManagerRequest();
+
 #if HAVE(UNIFIED_ASC_AUTH_UI) || HAVE(WEB_AUTHN_AS_MODERN)
     bool isASCAvailable();
 #endif
