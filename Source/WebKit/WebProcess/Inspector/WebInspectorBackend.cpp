@@ -203,6 +203,16 @@ void WebInspectorBackend::showResources()
     });
 }
 
+void WebInspectorBackend::showTab(const String& tabIdentifier)
+{
+    if (!m_page->corePage())
+        return;
+
+    whenFrontendConnectionEstablished([tabIdentifier](auto& frontendConnection) {
+        frontendConnection.send(Messages::WebInspectorUI::ShowTab(tabIdentifier), 0);
+    });
+}
+
 void WebInspectorBackend::showMainResourceForFrame(WebCore::FrameIdentifier frameIdentifier)
 {
     RefPtr frame = WebProcess::singleton().webFrame(frameIdentifier);

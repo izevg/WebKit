@@ -44,6 +44,7 @@ messages -> WebInspectorUI {
 
     ShowConsole()
     ShowResources()
+    ShowTab(String tabIdentifier)
 
     ShowMainResourceForFrame(String frameIdentifier)
 

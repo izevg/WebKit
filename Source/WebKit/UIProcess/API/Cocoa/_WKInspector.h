@@ -35,6 +35,12 @@ NS_ASSUME_NONNULL_BEGIN
 @class _WKInspectorExtension;
 @protocol _WKInspectorDelegate;
 
+typedef NS_ENUM(NSInteger, _WKInspectorAttachmentSide) {
+    _WKInspectorAttachmentSideBottom,
+    _WKInspectorAttachmentSideRight,
+    _WKInspectorAttachmentSideLeft,
+} WK_API_AVAILABLE(macos(WK_MAC_TBA), ios(WK_IOS_TBA), visionos(WK_XROS_TBA));
+
 WK_CLASS_AVAILABLE(macos(10.14.4), ios(12.2))
 @interface _WKInspector : NSObject <_WKInspectorExtensionHost, _WKInspectorIBActions>
 
@@ -57,6 +63,20 @@ WK_CLASS_AVAILABLE(macos(10.14.4), ios(12.2))
 - (void)togglePageProfiling;
 - (void)toggleElementSelection;
 - (void)printErrorToConsole:(NSString *)error;
+
+/**
+ * @abstract Shows the associated Web Inspector instance and selects a tab.
+ * @param tabIdentifier One of "elements", "network", "sources", "timeline",
+ * "storage", "graphics", "layers", "audit", or "console". Unknown identifiers
+ * and tabs that are not available for the inspected page are ignored.
+ */
+- (void)showTab:(NSString *)tabIdentifier WK_API_AVAILABLE(macos(WK_MAC_TBA), ios(WK_IOS_TBA), visionos(WK_XROS_TBA));
+
+/**
+ * @abstract Attaches the associated Web Inspector instance to the given side
+ * of the inspected view. Moves it if it is already attached to another side.
+ */
+- (void)attachToSide:(_WKInspectorAttachmentSide)side WK_API_AVAILABLE(macos(WK_MAC_TBA), ios(WK_IOS_TBA), visionos(WK_XROS_TBA));
 
 @end
 

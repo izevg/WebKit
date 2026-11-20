@@ -77,6 +77,7 @@ public:
 
     void showConsole();
     void showResources();
+    void showTab(const String& tabIdentifier);
 
     void showMainResourceForFrame(WebCore::FrameIdentifier);
 
