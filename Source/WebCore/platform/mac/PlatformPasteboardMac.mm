@@ -46,7 +46,7 @@
 
 namespace WebCore {
 
-static bool isFilePasteboardType(const String& type)
+bool PlatformPasteboard::isFilePasteboardType(const String& type)
 {
     RetainPtr nsType = type.createNSString();
     return [legacyFilenamesPasteboardTypeSingleton() isEqualToString:nsType.get()]
@@ -56,7 +56,7 @@ static bool isFilePasteboardType(const String& type)
 
 static bool canWritePasteboardType(const String& type)
 {
-    if (isFilePasteboardType(type))
+    if (PlatformPasteboard::isFilePasteboardType(type))
         return false;
 
     RetainPtr nsString = type.createNSString();
@@ -150,7 +150,7 @@ int PlatformPasteboard::numberOfFiles() const
 
 void PlatformPasteboard::getPathnamesForType(Vector<String>& pathnames, const String& pasteboardType) const
 {
-    if (!isFilePasteboardType(pasteboardType))
+    if (!PlatformPasteboard::isFilePasteboardType(pasteboardType))
         return;
     RetainPtr paths = [m_pasteboard propertyListForType:pasteboardType.createNSString().get()];
     if (RetainPtr pathsString = dynamic_objc_cast<NSString>(paths.get())) {

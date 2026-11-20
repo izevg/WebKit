@@ -72,6 +72,9 @@ public:
     WEBCORE_EXPORT std::optional<Vector<PasteboardItemInfo>> allPasteboardItemInfo(int64_t changeCount);
 
     WEBCORE_EXPORT static void performAsDataOwner(DataOwnerType, NOESCAPE Function<void()>&&);
+#if PLATFORM(MAC)
+    WEBCORE_EXPORT static bool isFilePasteboardType(const String&);
+#endif
 
     enum class IncludeImageTypes : bool { No, Yes };
     static String platformPasteboardTypeForSafeTypeForDOMToReadAndWrite(const String& domType, IncludeImageTypes = IncludeImageTypes::No);
