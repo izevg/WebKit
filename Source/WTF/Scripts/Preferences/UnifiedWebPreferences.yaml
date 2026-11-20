@@ -3654,9 +3654,9 @@ GlobalPrivacyControlEnabled:
     WebKitLegacy:
       default: false
     WebKit:
-      default: false
+      default: true
     WebCore:
-      default: false
+      default: true
 
 GoogleAntiFlickerOptimizationQuirkEnabled:
   type: bool
