@@ -189,7 +189,7 @@ static NSDictionary *alternateAttributes(LAContext *context, SecAccessControlRef
         (id)kSecAttrKeySizeInBits: @256,
         (id)kSecPrivateKeyAttrs: @{
             (id)kSecAttrIsPermanent: @YES,
-            (id)kSecAttrAccessGroup: WebCore::LocalAuthenticatorAccessGroup,
+            (id)kSecAttrAccessGroup: WebCore::localAuthenticatorAccessGroup(),
             (id)kSecAttrLabel: secAttrLabel.createNSString().get(),
             (id)kSecAttrApplicationTag: secAttrApplicationTag,
         }
@@ -201,7 +201,7 @@ RetainPtr<SecKeyRef> LocalConnection::createCredentialPrivateKey(LAContext *cont
     RetainPtr privateKeyAttributes = @{
         (id)kSecAttrAccessControl: (id)accessControlRef,
         (id)kSecAttrIsPermanent: @YES,
-        (id)kSecAttrAccessGroup: LocalAuthenticatorAccessGroup,
+        (id)kSecAttrAccessGroup: WebCore::localAuthenticatorAccessGroup(),
         (id)kSecAttrLabel: secAttrLabel.createNSString().get(),
         (id)kSecAttrApplicationTag: secAttrApplicationTag,
     };
@@ -238,7 +238,7 @@ RetainPtr<NSArray> LocalConnection::getExistingCredentials(const String& rpId)
     RetainPtr query = @{
         (id)kSecClass: (id)kSecClassKey,
         (id)kSecAttrSynchronizable: (id)kSecAttrSynchronizableAny,
-        (id)kSecAttrAccessGroup: LocalAuthenticatorAccessGroup,
+        (id)kSecAttrAccessGroup: WebCore::localAuthenticatorAccessGroup(),
         (id)kSecAttrLabel: rpId.createNSString().get(),
         (id)kSecReturnAttributes: @YES,
         (id)kSecMatchLimit: (id)kSecMatchLimitAll,

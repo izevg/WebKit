@@ -276,7 +276,7 @@ void LocalAuthenticator::clearAllCredentials()
     auto query = adoptNS([[NSMutableDictionary alloc] init]);
     [query setDictionary:@{
         (id)kSecClass: (id)kSecClassKey,
-        (id)kSecAttrAccessGroup: LocalAuthenticatorAccessGroup,
+        (id)kSecAttrAccessGroup: WebCore::localAuthenticatorAccessGroup(),
         (id)kSecUseDataProtectionKeychain: @YES
     }];
     updateQueryIfNecessary(query.get());
