@@ -131,6 +131,36 @@ InspectorFrontendAPI = {
         });
     },
 
+    showTab: function(tabType)
+    {
+        if (tabType === WI.ConsoleTabContentView.Type) {
+            InspectorFrontendAPI.showConsole();
+            return;
+        }
+
+        // Search and Settings are singletons owned by WI, and extension tabs are created by
+        // the extension controller, so only these tabs can be shown by type. Anything else is ignored.
+        let tabClasses = [
+            WI.ElementsTabContentView,
+            WI.NetworkTabContentView,
+            WI.SourcesTabContentView,
+            WI.TimelineTabContentView,
+            WI.StorageTabContentView,
+            WI.GraphicsTabContentView,
+            WI.LayersTabContentView,
+            WI.AuditTabContentView,
+        ];
+
+        let tabClass = tabClasses.find((tabClass) => tabClass.Type === tabType);
+        if (!tabClass || !tabClass.isTabAllowed())
+            return;
+
+        let tabContentView = WI.tabBrowser.bestTabContentViewForClass(tabClass) || new tabClass;
+        WI.tabBrowser.showTabForContentView(tabContentView, {
+            initiatorHint: WI.TabBrowser.TabNavigationInitiator.FrontendAPI,
+        });
+    },
+
     // COMPATIBILITY (iOS 13): merged into InspectorFrontendAPI.setTimelineProfilingEnabled.
     showTimelines: function()
     {

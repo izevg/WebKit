@@ -403,6 +403,11 @@ void WebInspectorUI::showResources()
     m_frontendAPIDispatcher->dispatchCommandWithResultAsync("showResources"_s);
 }
 
+void WebInspectorUI::showTab(const String& tabIdentifier)
+{
+    m_frontendAPIDispatcher->dispatchCommandWithResultAsync("showTab"_s, { JSON::Value::create(tabIdentifier) });
+}
+
 void WebInspectorUI::showMainResourceForFrame(const String& frameIdentifier)
 {
     m_frontendAPIDispatcher->dispatchCommandWithResultAsync("showMainResourceForFrame"_s, { JSON::Value::create(frameIdentifier) });

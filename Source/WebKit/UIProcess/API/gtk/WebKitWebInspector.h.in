@@ -70,6 +70,10 @@ webkit_web_inspector_show                (WebKitWebInspector *inspector);
 WEBKIT_API void
 webkit_web_inspector_close               (WebKitWebInspector *inspector);
 
+WEBKIT_API void
+webkit_web_inspector_show_tab            (WebKitWebInspector *inspector,
+                                          const char         *tab_identifier);
+
 WEBKIT_API guint
 webkit_web_inspector_get_attached_height (WebKitWebInspector *inspector);
 

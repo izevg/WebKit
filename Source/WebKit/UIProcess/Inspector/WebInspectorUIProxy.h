@@ -176,6 +176,7 @@ public:
 
     void showConsole();
     void showResources();
+    void showTab(const String& tabIdentifier);
     void showMainResourceForFrame(WebCore::FrameIdentifier);
     void openURLExternally(const String& url);
     void revealFileExternally(const String& path);
