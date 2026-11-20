@@ -6871,9 +6871,9 @@ PrivateClickMeasurementEnabled:
     WebKitLegacy:
       default: false
     WebKit:
-      default: true
+      default: false
     WebCore:
-      default: true
+      default: false
 
 PrivateClickMeasurementFraudPreventionEnabled:
   type: bool
@@ -7366,7 +7366,7 @@ SafeBrowsingEnabled:
   exposed: [ WebKit ]
   defaultValue:
     WebKit:
-      default: true
+      default: false
 
 SampledPageTopColorMaxDifference:
   type: double
@@ -8368,9 +8368,9 @@ SpeculationRulesPrefetchEnabled:
     WebKitLegacy:
       default: true
     WebKit:
-      default: true
+      default: false
     WebCore:
-      default: true
+      default: false
   disableInLockdownMode: true
   sharedPreferenceForWebProcess: true
   richJavaScript: true

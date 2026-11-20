@@ -156,7 +156,8 @@ TEST(SafeBrowsing, Preference)
     };
 
     RetainPtr webView = adoptNS([WKWebView new]);
-    EXPECT_TRUE([webView configuration].preferences.fraudulentWebsiteWarningEnabled);
+    // Quickie turns Safe Browsing off by default; embedders opt in.
+    EXPECT_FALSE([webView configuration].preferences.fraudulentWebsiteWarningEnabled);
     [webView configuration].preferences.fraudulentWebsiteWarningEnabled = YES;
     [webView setNavigationDelegate:delegate.get()];
     [webView configuration].preferences.fraudulentWebsiteWarningEnabled = YES;
@@ -507,6 +508,7 @@ TEST(SafeBrowsing, MissingFramework)
 {
     ClassMethodSwizzler swizzler(getSSBLookupContextClassSingleton(), @selector(sharedLookupContext), [NullLookupContext methodForSelector:@selector(sharedLookupContext)]);
     RetainPtr webView = adoptNS([[TestWKWebView alloc] initWithFrame:CGRectMake(0, 0, 800, 600)]);
+    [webView configuration].preferences.fraudulentWebsiteWarningEnabled = YES;
     [webView synchronouslyLoadTestPageNamed:@"simple"];
 }
 

@@ -638,6 +638,7 @@ static void setupSKAdNetworkTest(Vector<String>& consoleMessages, id<WKNavigatio
             break;
         }
     }
+    [[viewConfiguration preferences] _setPrivateClickMeasurementEnabled:YES];
 
     [viewConfiguration.get().websiteDataStore _setPrivateClickMeasurementDebugModeEnabled:YES];
 
