@@ -1280,6 +1280,7 @@ void WebAuthenticatorCoordinatorProxy::performRequestLegacy(RetainPtr<ASCCredent
 }
 #endif // HAVE(UNIFIED_ASC_AUTH_UI)
 
+#if !ENABLE(WEB_AUTHN_OWN_MANAGER)
 static inline void getCanCurrentProcessAccessPasskeyForRelyingParty(const WebCore::SecurityOriginData& data, CompletionHandler<void(bool)>&& handler)
 {
     if ([getASCWebKitSPISupportClassSingleton() respondsToSelector:@selector(getCanCurrentProcessAccessPasskeysForRelyingParty:withCompletionHandler:)]) {
@@ -1305,6 +1306,7 @@ static inline void getArePasskeysDisallowedForRelyingParty(const WebCore::Securi
     }
     handler(false);
 }
+#endif // !ENABLE(WEB_AUTHN_OWN_MANAGER)
 
 void WebAuthenticatorCoordinatorProxy::isConditionalMediationAvailable(const WebCore::SecurityOriginData& data, QueryCompletionHandler&& handler)
 {
