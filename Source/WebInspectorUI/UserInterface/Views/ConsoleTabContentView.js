@@ -33,6 +33,12 @@ WI.ConsoleTabContentView = class ConsoleTabContentView extends WI.ContentBrowser
             flexibleNavigationItem: new WI.NavigationItem,
         });
 
+        if (document.body.classList.contains("quickie-local-inspector")) {
+            this.contentBrowser.navigationBar.element.classList.add("quickie-console-toolbar");
+            // Keep the real commands reachable by scrolling or tabbing at narrow widths.
+            this.contentBrowser.navigationBar.sizesToFit = true;
+        }
+
         this._wasShowingSplitConsole = false;
     }
 

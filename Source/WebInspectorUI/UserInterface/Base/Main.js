@@ -227,6 +227,7 @@ WI.contentLoaded = function()
 
     // Add platform style classes so the UI can be tweaked per-platform.
     document.body.classList.add(WI.Platform.name + "-platform");
+    document.body.classList.toggle("quickie-local-inspector", WI.Platform.name === "mac" && !InspectorFrontendHost.isRemote);
     if (WI.Platform.version.name)
         document.body.classList.add(WI.Platform.version.name);
 
@@ -433,10 +434,54 @@ WI.contentLoaded = function()
         inspectedPageControlNavigationItems.push(WI._downloadTabBarButton);
     }
 
-    WI.tabBar.addNavigationItemBefore(new WI.GroupNavigationItem([
-        ...dockingConfigurationNavigationItems,
-        ...inspectedPageControlNavigationItems,
-    ]));
+    if (document.body.classList.contains("quickie-local-inspector")) {
+        WI.tabBar.addNavigationItemBefore(new WI.GroupNavigationItem(inspectedPageControlNavigationItems));
+
+        let dockSides = new Map([
+            [WI._dockLeftTabBarButton, WI.DockConfiguration.Left],
+            [WI._dockRightTabBarButton, WI.DockConfiguration.Right],
+            [WI._dockBottomTabBarButton, WI.DockConfiguration.Bottom],
+            [WI._undockTabBarButton, WI.DockConfiguration.Undocked],
+        ]);
+        dockSides.delete(undefined);
+
+        if (dockSides.size) {
+            WI._dockMenuNavigationItem = new WI.NavigationItem("dock-menu");
+            let select = WI._dockMenuNavigationItem.element.createChild("select");
+            select.setAttribute("aria-label", WI.unlocalizedString("Dock Web Inspector"));
+
+            let placeholder = select.createChild("option");
+            placeholder.value = "";
+            placeholder.textContent = WI.unlocalizedString("Dock");
+            placeholder.disabled = true;
+            placeholder.selected = true;
+
+            WI._dockMenuOptions = new Map;
+            for (let [button, side] of dockSides) {
+                let option = select.createChild("option");
+                option.value = side;
+                option.textContent = button.label;
+                WI._dockMenuOptions.set(button, option);
+            }
+
+            select.addEventListener("change", () => {
+                let side = select.value;
+                select.value = "";
+                if (side)
+                    InspectorFrontendHost.requestSetDockSide(side);
+            });
+
+            WI.tabBar.addNavigationItemAfter(WI._dockMenuNavigationItem);
+        }
+
+        if (WI._closeTabBarButton)
+            WI.tabBar.addNavigationItemAfter(WI._closeTabBarButton);
+    } else {
+        WI.tabBar.addNavigationItemBefore(new WI.GroupNavigationItem([
+            ...dockingConfigurationNavigationItems,
+            ...inspectedPageControlNavigationItems,
+        ]));
+    }
 
     WI._consoleDividerNavigationItem = new WI.DividerNavigationItem;
     WI.tabBar.addNavigationItemBefore(WI._consoleDividerNavigationItem);
@@ -459,10 +504,14 @@ WI.contentLoaded = function()
         });
     }, WI);
 
-    WI.tabBar.addNavigationItemBefore(new WI.GroupNavigationItem([
+    let consoleIssueNavigationItem = new WI.GroupNavigationItem([
         WI._consoleWarningsTabBarButton,
         WI._consoleErrorsTabBarButton,
-    ]));
+    ]);
+    if (document.body.classList.contains("quickie-local-inspector"))
+        WI.tabBar.addNavigationItemAfter(consoleIssueNavigationItem);
+    else
+        WI.tabBar.addNavigationItemBefore(consoleIssueNavigationItem);
 
     WI._updateInspectModeTabBarButton();
     WI._updateDownloadTabBarButton();
@@ -2017,6 +2066,15 @@ WI._updateDockNavigationItems = function()
             WI._undockTabBarButton.hidden = true;
     }
 
+    if (WI._dockMenuNavigationItem) {
+        let hasAvailableSide = false;
+        for (let [button, option] of WI._dockMenuOptions) {
+            option.disabled = button.hidden;
+            hasAvailableSide ||= !button.hidden;
+        }
+        WI._dockMenuNavigationItem.hidden = !hasAvailableSide;
+    }
+
     WI._updateTabBarDividers();
 
     WI.tabBar.resetCachedWidths();
@@ -2280,7 +2338,7 @@ WI._updateTabBarDividers = function()
     let errorsHidden = WI._consoleErrorsTabBarButton.hidden;
 
     // Hide the divider if everything to the left is hidden OR if everything to the right is hidden.
-    WI._consoleDividerNavigationItem.hidden = (closeHidden && dockLeftHidden && dockBottomHidden && dockRightHidden && undockHidden && inspectModeHidden && deviceSettingsHidden && reloadHidden && downloadHidden) || (warningsHidden && errorsHidden);
+    WI._consoleDividerNavigationItem.hidden = document.body.classList.contains("quickie-local-inspector") || (closeHidden && dockLeftHidden && dockBottomHidden && dockRightHidden && undockHidden && inspectModeHidden && deviceSettingsHidden && reloadHidden && downloadHidden) || (warningsHidden && errorsHidden);
 
     WI.tabBar.needsLayout();
 };

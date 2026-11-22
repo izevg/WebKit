@@ -545,6 +545,8 @@ WI.QuickConsole = class QuickConsole extends WI.View
 
     _updateStyles()
     {
-        this.element.classList.toggle("showing-log", WI.isShowingConsoleTab() || WI.isShowingSplitConsole());
+        let showingConsoleTab = WI.isShowingConsoleTab();
+        this.element.classList.toggle("showing-console-tab", showingConsoleTab);
+        this.element.classList.toggle("showing-log", showingConsoleTab || WI.isShowingSplitConsole());
     }
 };

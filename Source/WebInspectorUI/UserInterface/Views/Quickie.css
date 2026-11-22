@@ -13,65 +13,265 @@ body.mac-platform.docked {
     border-inline: 0;
 }
 
-body.mac-platform .tab-bar {
-    --tab-bar-background: var(--background-color-intermediate);
-    --tab-item-light-border-color: var(--separator-color);
-    --tab-item-medium-border-color: var(--separator-color);
-    --tab-item-dark-border-color: var(--border-color);
+body.quickie-local-inspector {
+    --tab-bar-height: 36px;
+    --separator-color: -apple-system-separator;
+    --quickie-chrome-background: var(--panel-background-color);
+    --quickie-output-background: -apple-system-text-background;
+    --quickie-selection-fill: color-mix(in srgb, var(--system-accent-color) 18%, transparent);
+    --quickie-caption: 11px / 14px -webkit-system-font, system-ui, sans-serif;
+    --quickie-mono-small: 11px / 14px ui-monospace, Menlo, monospace;
 }
 
-body.mac-platform.window-inactive .tab-bar > .tabs > .item:not(.selected) {
-    --tab-item-background: var(--tab-bar-background);
+.quickie-unified-titlebar body.quickie-local-inspector:not(.docked) {
+    --tab-bar-height: max(40px, calc(var(--quickie-native-titlebar-height, 0px) / var(--zoom-factor, 1)));
 }
 
-body.mac-platform .tab-bar > .tabs > .item:not(.disabled).selected {
-    --tab-item-background: var(--background-color-content);
-    box-shadow: inset 0 -2px var(--system-accent-color);
-}
-
-body.mac-platform.window-inactive .tab-bar > .tabs > .item:not(.disabled).selected {
-    box-shadow: inset 0 -2px var(--border-color);
-}
-
-body.mac-platform:not(.window-inactive) .tab-bar > .tabs:not(.animating) > .item:not(.selected, .disabled):hover {
-    --tab-item-background: var(--button-background-color-hover);
-}
-
-body.mac-platform .tab-bar > .tabs > .item:focus-visible {
-    outline: 2px solid -webkit-focus-ring-color;
-    outline-offset: -3px;
-}
-
-body.mac-platform .content-view.log > .navigation-bar,
-body.mac-platform .quick-console {
-    background-color: var(--background-color-intermediate);
-}
-
-body.mac-platform .quick-console {
+body.quickie-local-inspector .tab-bar {
     padding-inline: 8px;
+    --tab-bar-background: var(--quickie-chrome-background);
+    --tab-item-medium-border-style: 0 solid transparent;
 }
 
-body.mac-platform .quick-console.showing-log {
-    border-top-color: var(--separator-color) !important;
+.quickie-unified-titlebar body.quickie-local-inspector:not(.docked) .tab-bar {
+    padding-left: max(8px, calc(var(--quickie-native-controls-left, 0px) / var(--zoom-factor, 1)));
+    padding-right: max(8px, calc(var(--quickie-native-controls-right, 0px) / var(--zoom-factor, 1)));
 }
 
-body.mac-platform .console-message {
-    padding-block: 6px;
+body.quickie-local-inspector .tab-bar > .border.top {
+    display: none;
 }
 
-body.mac-platform .console-message .go-to-link,
-body.mac-platform .console-messages:focus .console-item.selected .go-to-link {
+body.quickie-local-inspector .tab-bar > .border.bottom {
+    background-color: var(--separator-color);
+}
+
+body.quickie-local-inspector .tab-bar > .tabs {
+    min-width: 0;
+    flex-wrap: nowrap;
+    align-items: center;
+}
+
+body.quickie-local-inspector .tab-bar > .tabs > .item {
+    border: 0;
+    flex: none;
+    margin-block: calc((var(--tab-bar-height) - 24px) / 2);
+    padding-inline: 8px;
+    height: 24px;
+    border-radius: 6px;
+    background: transparent;
+    font: var(--quickie-caption);
+}
+
+body.quickie-local-inspector .tab-bar > .tabs > .item.pinned {
+    width: 24px;
+    padding: 0;
+}
+
+body.quickie-local-inspector .tab-bar > .tabs:not(.calculate-width) > .item:not(.pinned) {
+    flex-grow: 0;
+}
+
+body.quickie-local-inspector .tab-bar > .tabs > .item:not(.pinned) > :is(.icon, .flex-space) {
+    display: none;
+}
+
+body.quickie-local-inspector .tab-bar > .tabs > .item:not(.pinned) > .name {
+    margin: 0;
+    color: var(--text-color-secondary);
+    font: inherit;
+}
+
+body.quickie-local-inspector .tab-bar > .tabs > .item:not(.disabled).selected {
+    background: var(--quickie-selection-fill);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--system-accent-color) 50%, transparent);
+}
+
+body.quickie-local-inspector .tab-bar > .tabs > .item:not(.disabled).selected > .name {
+    color: var(--text-color);
+    font-weight: 600;
+}
+
+body.quickie-local-inspector:is(.window-inactive, .window-docked-inactive) .tab-bar > .tabs > .item:not(.disabled).selected {
+    background: var(--background-color-alternate);
+    box-shadow: inset 0 0 0 1px var(--separator-color);
+}
+
+body.quickie-local-inspector .tab-bar > .tabs:not(.animating) > .item:not(.selected, .disabled):hover {
+    background: var(--background-color-pressed);
+}
+
+body.quickie-local-inspector .tab-bar > .navigation-bar {
+    border-bottom: 0;
+}
+
+body.quickie-local-inspector .tab-bar > .navigation-bar > .group > .item {
+    margin-inline: 2px;
+}
+
+body.quickie-local-inspector .tab-bar .dock-menu > select {
+    max-inline-size: 68px;
+    min-height: 24px;
+    font: var(--quickie-caption);
+}
+
+body.quickie-local-inspector .tab-bar > .tabs > .item:focus-visible {
+    outline: 2px solid -webkit-focus-ring-color;
+    outline-offset: -2px;
+}
+
+body.quickie-local-inspector .quickie-console-toolbar {
+    height: 48px;
+    padding-inline: 12px;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    background-color: var(--quickie-chrome-background);
+    border-bottom: 1px solid var(--separator-color);
+    scrollbar-width: thin;
+}
+
+body.quickie-local-inspector .quickie-console-toolbar > .item:not(.flexible-space) {
+    flex: none;
+    margin-inline-end: 8px;
+}
+
+body.quickie-local-inspector .quickie-console-toolbar > .item.clear-log {
+    height: 24px;
+    padding-inline: 8px;
+    border: 1px solid var(--separator-color);
+    border-radius: 6px;
+    font: var(--quickie-caption);
+}
+
+body.quickie-local-inspector .quickie-console-toolbar > .item.clear-log:hover {
+    background: var(--background-color-pressed);
+}
+
+body.quickie-local-inspector .quickie-console-toolbar > .item.find-banner.console {
+    margin-inline-start: 0;
+}
+
+body.quickie-local-inspector .quickie-console-toolbar > .item.find-banner.console > input[type="search"] {
+    width: clamp(92px, 23vw, 320px);
+    padding-inline: 8px;
+    font: var(--quickie-mono-small);
+    border-color: var(--separator-color);
+    border-start-start-radius: 6px;
+    border-end-start-radius: 6px;
+}
+
+body.quickie-local-inspector .quickie-console-toolbar > .item.find-banner.console > button.next-result {
+    border-start-end-radius: 6px;
+    border-end-end-radius: 6px;
+}
+
+body.quickie-local-inspector .quickie-console-toolbar > .item.find-banner.console > input[type="search"]:focus-visible {
+    outline: 2px solid -webkit-focus-ring-color;
+    outline-offset: -2px;
+}
+
+body.quickie-local-inspector .quickie-console-toolbar > .log-scope-bar {
+    flex-wrap: nowrap;
+    padding-inline: 0;
+}
+
+body.quickie-local-inspector .quickie-console-toolbar .log-scope-bar > li {
+    min-height: 22px;
+    padding: 4px 8px;
+    font: var(--quickie-caption);
+    --scope-bar-border-color-default: var(--separator-color);
+}
+
+body.quickie-local-inspector .quickie-console-toolbar .log-scope-bar > li::after {
+    border-radius: 6px;
+}
+
+body.quickie-local-inspector .quickie-console-toolbar .log-scope-bar > li:is(.selected, :hover) {
+    --scope-bar-text-color-default: var(--text-color);
+    --scope-bar-background-color-default: var(--quickie-selection-fill);
+    --scope-bar-border-color-default: var(--system-accent-color);
+}
+
+body.quickie-local-inspector .content-view.tab.console .console-messages {
+    background-color: var(--quickie-output-background);
+    font: var(--quickie-mono-small);
+}
+
+body.quickie-local-inspector .content-view.tab.console .console-messages > :first-child {
+    margin-top: 0;
+}
+
+body.quickie-local-inspector .content-view.tab.console .console-item {
+    border-top-color: var(--separator-color);
+}
+
+body.quickie-local-inspector .content-view.tab.console .console-session-header {
+    text-align: start;
+    padding: 4px 12px;
     color: var(--text-color-secondary);
 }
 
-body.mac-platform .console-message .go-to-link:is(:hover, :focus-visible) {
-    color: var(--text-color);
+body.quickie-local-inspector .content-view.tab.console :is(.console-message, .console-user-command) {
+    padding: 4px 12px 4px 24px;
+    min-height: 24px;
+}
+
+body.quickie-local-inspector .content-view.tab.console :is(.console-item, .console-group)::before {
+    left: 8px;
+}
+
+body.quickie-local-inspector .content-view.tab.console .console-message > .timestamp {
+    float: left;
+    margin-inline: 0 8px;
+    padding-top: 0;
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-color-secondary);
+}
+
+body.quickie-local-inspector .content-view.tab.console .console-message > .console-message-location {
+    max-width: 30%;
+    margin-inline-start: 12px;
+    font: inherit;
+}
+
+body.quickie-local-inspector .content-view.tab.console .console-message > .console-message-location.program-icon:has(.source-link) > .title,
+body.quickie-local-inspector .content-view.tab.console .console-message > .console-message-location.program-icon .separator {
+    display: none;
+}
+
+body.quickie-local-inspector .content-view.tab.console .console-message .go-to-link {
+    color: var(--text-color-secondary);
     text-decoration: underline;
 }
 
-body.mac-platform .console-messages:focus .console-item.selected {
-    background-color: color-mix(in srgb, var(--system-accent-color) 18%, var(--background-color-content));
+body.quickie-local-inspector .content-view.tab.console .console-message .go-to-link:is(:hover, :focus-visible) {
+    color: var(--text-color);
+}
+
+body.quickie-local-inspector .content-view.tab.console .console-error-level {
+    background-color: var(--error-background-color-secondary);
+    box-shadow: inset 3px 0 var(--error-text-color);
+}
+
+body.quickie-local-inspector .content-view.tab.console .console-warning-level {
+    background-color: var(--warning-background-color-secondary);
+    box-shadow: inset 3px 0 var(--border-color-warning, var(--warning-background-color));
+}
+
+body.quickie-local-inspector .content-view.tab.console .console-messages:focus .console-item.selected {
+    background-color: var(--quickie-selection-fill);
     border-color: var(--separator-color);
+}
+
+body.quickie-local-inspector .quick-console.showing-console-tab {
+    --console-prompt-min-height: 26px;
+    padding: 8px 12px;
+    background-color: var(--quickie-chrome-background);
+    border-top-color: var(--separator-color) !important;
+    font: var(--quickie-mono-small);
 }
 
 body.mac-platform .network-detail {
@@ -96,17 +296,17 @@ body.mac-platform.compact-storage #tab-browser {
 }
 
 @media (prefers-contrast: more) {
-    body.mac-platform .tab-bar > .tabs > .item:not(.disabled).selected {
+    body.quickie-local-inspector .tab-bar > .tabs > .item:not(.disabled).selected {
         outline: 2px solid var(--text-color);
         outline-offset: -2px;
     }
 
-    body.mac-platform .tab-bar > .tabs > .item:focus-visible {
+    body.quickie-local-inspector .tab-bar > .tabs > .item:focus-visible {
         outline: 2px solid -webkit-focus-ring-color;
         outline-offset: -4px;
     }
 
-    body.mac-platform .console-item.selected {
+    body.quickie-local-inspector .console-item.selected {
         outline: 2px solid var(--text-color);
         outline-offset: -2px;
     }

@@ -1,0 +1,169 @@
+/*
+ * Copyright (C) 2026 Quickie contributors
+ * SPDX-License-Identifier: BSD-2-Clause
+ */
+
+body.quickie-local-inspector .tab.network .content-browser > :is(.network-toolbar, .network-filter-toolbar),
+body.quickie-local-inspector .tab.elements > .content-browser > .navigation-bar,
+body.quickie-local-inspector .tab:is(.storage, .timeline) .content-browser > .navigation-bar {
+    justify-content: start;
+    padding-inline: 8px;
+    height: 36px;
+    border-color: var(--separator-color);
+    background: var(--background-color-intermediate);
+}
+
+body.quickie-local-inspector .tab.network .network-toolbar > .filter-bar {
+    flex: 1 1 160px;
+    min-width: 104px;
+}
+
+body.quickie-local-inspector .tab.network .network-toolbar > .flexible-space {
+    flex-grow: 0;
+}
+
+body.quickie-local-inspector .tab.network .network-filter-toolbar {
+    gap: 4px;
+    height: 32px;
+    background: var(--background-color-content);
+}
+
+body.quickie-local-inspector .network-filter-toolbar .scope-bar {
+    --scope-bar-text-color-override: var(--text-color);
+    --scope-bar-background-color-override: color-mix(in srgb, var(--system-accent-color) 18%, transparent);
+    --scope-bar-border-color-override: transparent;
+}
+
+body.quickie-local-inspector .network-filter-toolbar .scope-bar > li {
+    border-radius: 6px;
+}
+
+body.quickie-local-inspector .network-filter-toolbar .scope-bar > li::after {
+    border-radius: inherit;
+}
+
+body.quickie-local-inspector .network-table > .table,
+body.quickie-local-inspector .content-view.dom-tree .tree-outline.dom,
+body.quickie-local-inspector .content-view.dom-storage > .data-grid,
+body.quickie-local-inspector .heap-allocations .data-grid {
+    --selected-background-color: color-mix(in srgb, var(--system-accent-color) 18%, var(--background-color-content));
+    --selected-background-color-unfocused: var(--background-color-intermediate);
+    --selected-foreground-color: var(--text-color);
+    --selected-secondary-text-color: var(--text-color-secondary);
+}
+
+body.quickie-local-inspector .network-table > .table {
+    --table-column-border-end: 1px solid transparent;
+    --table-cell-padding-inline-start: 8px;
+    --table-cell-padding-inline-end: 8px;
+}
+
+body.quickie-local-inspector .network-table > .table > .header,
+body.quickie-local-inspector .network-detail-drawer-header,
+body.quickie-local-inspector .network-detail .navigation-bar,
+body.quickie-local-inspector .content-view.dom-storage .data-grid .header,
+body.quickie-local-inspector .heap-allocations .data-grid .header {
+    color: var(--text-color-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--background-color-intermediate);
+    border-color: var(--separator-color);
+}
+
+body.quickie-local-inspector .network-table > .table .data-container .cell:not(.name),
+body.quickie-local-inspector .network-table > .statistics,
+body.quickie-local-inspector .network-detail-drawer-header > span,
+body.quickie-local-inspector .network-detail .resource-headers,
+body.quickie-local-inspector .content-view.dom-storage .data-grid tbody,
+body.quickie-local-inspector .heap-allocations .data-grid tbody {
+    font: 11px / 14px ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+}
+
+body.quickie-local-inspector .network-table > .table .data-container .cell:not(.name) {
+    line-height: inherit;
+}
+
+body.quickie-local-inspector .network-table > .table .data-list > li:not(.filler) {
+    border-bottom-color: var(--separator-color);
+}
+
+body.quickie-local-inspector .network-table > .statistics {
+    padding-inline: 12px;
+    background: var(--background-color-intermediate);
+    border-color: var(--separator-color);
+}
+
+body.quickie-local-inspector .network-table.detail-drawer > .network-detail-drawer-header {
+    min-height: 36px;
+    padding-inline: 8px 12px;
+}
+
+body.quickie-local-inspector .network-detail .resource-headers {
+    padding-inline: 12px;
+}
+
+body.quickie-local-inspector .content-view.tab.elements .content-view.dom-tree:not(.show-gutter) .tree-outline.dom {
+    box-sizing: border-box;
+    padding-inline: 12px;
+}
+
+body.quickie-local-inspector .content-view.dom-tree .tree-outline.dom li {
+    min-height: 20px;
+    line-height: 20px;
+}
+
+body.quickie-local-inspector .content-view.dom-tree .tree-outline.dom li .selection-area {
+    inset-inline: 4px;
+    height: 20px;
+    border-radius: 6px;
+}
+
+body.quickie-local-inspector .content-view.dom-tree .tree-outline.dom li.inspected-node > span::after {
+    margin-inline-start: 4px;
+    padding-inline: 4px;
+    border-radius: 6px;
+    background: var(--background-color-intermediate);
+}
+
+body.quickie-local-inspector #details-sidebar:has(.sidebar-panel.css-style.selected) {
+    border-color: var(--separator-color);
+    background: var(--background-color-intermediate);
+}
+
+body.quickie-local-inspector .sidebar-panel.css-style .spreadsheet-css-declaration {
+    padding-inline: 12px;
+}
+
+body.quickie-local-inspector .sidebar-panel.css-style .section-header {
+    padding-inline: 12px;
+    background: var(--background-color-intermediate);
+}
+
+body.quickie-local-inspector .sidebar-panel.css-style .header > :is(.selector, .origin) {
+    overflow-wrap: anywhere;
+}
+
+body.quickie-local-inspector .timeline-overview > :is(.navigation-bar.timelines, .tree-outline.timelines, .timeline-ruler) {
+    border-color: var(--separator-color);
+    background-color: var(--background-color-intermediate);
+}
+
+body.quickie-local-inspector .timeline-overview > .timeline-ruler,
+body.quickie-local-inspector .timeline-data-grid .data-grid tbody {
+    font-variant-numeric: tabular-nums;
+}
+
+body.quickie-local-inspector .content-view.dom-storage > .storage-value-preview {
+    background: var(--background-color-intermediate);
+}
+
+@media (prefers-contrast: more) {
+    body.quickie-local-inspector .network-table > .table .data-list > li.selected,
+    body.quickie-local-inspector .content-view.dom-tree .tree-outline.dom li.selected .selection-area,
+    body.quickie-local-inspector .content-view.dom-storage .data-grid tr.selected,
+    body.quickie-local-inspector .heap-allocations .data-grid tr.selected {
+        outline: 2px solid var(--system-accent-color);
+        outline-offset: -2px;
+    }
+}

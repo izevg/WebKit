@@ -35,8 +35,18 @@ WI.NetworkTabContentView = class NetworkTabContentView extends WI.TabContentView
         this._contentBrowser.showContentView(this._networkTableContentView);
 
         let filterNavigationItems = this._networkTableContentView.filterNavigationItems;
-        for (let i = 0; i < filterNavigationItems.length; ++i)
-            this._contentBrowser.navigationBar.insertNavigationItem(filterNavigationItems[i], i);
+        if (document.body.classList.contains("quickie-local-inspector")) {
+            let [urlFilter, ...requestFilters] = filterNavigationItems;
+            this._contentBrowser.navigationBar.element.classList.add("network-toolbar");
+            this._contentBrowser.navigationBar.insertNavigationItem(urlFilter, 0);
+
+            let filterBar = new WI.NavigationBar(null, {navigationItems: requestFilters});
+            filterBar.element.classList.add("network-filter-toolbar");
+            this._contentBrowser.insertSubviewBefore(filterBar, this._contentBrowser.contentViewContainer);
+        } else {
+            for (let i = 0; i < filterNavigationItems.length; ++i)
+                this._contentBrowser.navigationBar.insertNavigationItem(filterNavigationItems[i], i);
+        }
 
         this.addSubview(this._contentBrowser);
 

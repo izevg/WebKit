@@ -43,6 +43,7 @@
 #import "WebPageProxy.h"
 #import "WebsiteDataStore.h"
 #import "_WKInspectorConfigurationInternal.h"
+#import "_WKInspectorWindow.h"
 #import <WebKit/WKFrameInfo.h>
 #import <WebKit/WKNavigationAction.h>
 #import <WebKit/WKNavigationDelegate.h>
@@ -51,6 +52,7 @@
 #import <WebKit/WKWebViewConfigurationPrivate.h>
 #import <wtf/WeakObjCPtr.h>
 #import <wtf/cocoa/RuntimeApplicationChecksCocoa.h>
+#import <wtf/cocoa/TypeCastsCocoa.h>
 
 #if ENABLE(WK_WEB_EXTENSIONS) && ENABLE(INSPECTOR_EXTENSIONS)
 #import "WKWebExtensionController.h"
@@ -70,6 +72,7 @@ static void* const safeAreaInsetsKVOContext = (void*)&safeAreaInsetsKVOContext;
     RetainPtr<WKInspectorWKWebView> _webView;
     WeakObjCPtr<id <WKInspectorViewControllerDelegate>> _delegate;
     RetainPtr<_WKInspectorConfiguration> _configuration;
+    RetainPtr<NSString> _windowChromeScript;
 }
 
 - (instancetype)initWithConfiguration:(_WKInspectorConfiguration *)configuration inspectedPage:(NakedPtr<WebKit::WebPageProxy>)inspectedPage
@@ -126,10 +129,84 @@ static void* const safeAreaInsetsKVOContext = (void*)&safeAreaInsetsKVOContext;
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey, id> *)change context:(void*)context
 {
-    if (context == safeAreaInsetsKVOContext)
-        [_webView _setObscuredContentInsets:_webView.get().safeAreaInsets immediate:NO];
-    else
+    if (context != safeAreaInsetsKVOContext) {
         [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+        return;
+    }
+
+    if (_inspectedPage)
+        [self _updateWindowChrome];
+    else
+        [_webView _setObscuredContentInsets:_webView.get().safeAreaInsets immediate:NO];
+}
+
+- (void)_updateWindowChrome
+{
+    RetainPtr view = _webView;
+    RefPtr inspectedPage = _inspectedPage;
+    if (!view || !inspectedPage)
+        return;
+
+    NSEdgeInsets insets = view.get().safeAreaInsets;
+    RetainPtr window = dynamic_objc_cast<_WKInspectorWindow>(view.get().window);
+    // An inspector may be docked inside another inspector's window.
+    bool unifiedTitlebar = window && ![window isForRemoteTarget] && [window inspectedWebView] == inspectedPage->cocoaView().get();
+    bool showsTitlebar = unifiedTitlebar && !(window.get().styleMask & NSWindowStyleMaskFullScreen);
+    // In windowed mode the frontend shares the titlebar band with the system buttons.
+    if (showsTitlebar)
+        insets.top = 0;
+    [view _setObscuredContentInsets:insets immediate:NO];
+
+    if (![view.get().URL.scheme isEqualToString:WKInspectorResourceScheme])
+        return;
+
+    if (!unifiedTitlebar) {
+        if (_windowChromeScript) {
+            _windowChromeScript = nil;
+            [view evaluateJavaScript:@"document.documentElement?.classList.remove('quickie-unified-titlebar')" completionHandler:nil];
+        }
+        return;
+    }
+
+    CGFloat titlebarHeight = 0;
+    CGFloat controlsLeft = 0;
+    CGFloat controlsRight = 0;
+    if (showsTitlebar) {
+        constexpr CGFloat controlSpacing = 8;
+        NSRect bounds = view.get().bounds;
+        auto distanceFromTop = [&](NSRect rect) {
+            return [view isFlipped] ? NSMaxY(rect) - NSMinY(bounds) : NSMaxY(bounds) - NSMinY(rect);
+        };
+        NSRect contentLayoutRect = [view convertRect:window.get().contentLayoutRect fromView:nil];
+        titlebarHeight = [view isFlipped] ? NSMinY(contentLayoutRect) - NSMinY(bounds) : NSMaxY(bounds) - NSMaxY(contentLayoutRect);
+        titlebarHeight = std::max<CGFloat>(titlebarHeight, 0);
+
+        for (NSWindowButton buttonType : { NSWindowCloseButton, NSWindowMiniaturizeButton, NSWindowZoomButton }) {
+            RetainPtr button = [window standardWindowButton:buttonType];
+            if (!button || [button isHiddenOrHasHiddenAncestor])
+                continue;
+
+            NSRect buttonRect = [view convertRect:button.get().bounds fromView:button.get()];
+            titlebarHeight = std::max(titlebarHeight, distanceFromTop(buttonRect));
+            if (NSMidX(buttonRect) < NSMidX(bounds))
+                controlsLeft = std::max(controlsLeft, NSMaxX(buttonRect) - NSMinX(bounds) + controlSpacing);
+            else
+                controlsRight = std::max(controlsRight, NSMaxX(bounds) - NSMinX(buttonRect) + controlSpacing);
+        }
+    }
+
+    SUPPRESS_UNRETAINED_ARG RetainPtr script = adoptNS([[NSString alloc] initWithFormat:
+        @"{ const root = document.documentElement; if (root) {"
+        " root.style.setProperty('--quickie-native-titlebar-height', '%fpx');"
+        " root.style.setProperty('--quickie-native-controls-left', '%fpx');"
+        " root.style.setProperty('--quickie-native-controls-right', '%fpx');"
+        " root.classList.add('quickie-unified-titlebar'); } }",
+        titlebarHeight, controlsLeft, controlsRight]);
+    if ([_windowChromeScript isEqualToString:script.get()])
+        return;
+
+    _windowChromeScript = WTF::move(script);
+    [view evaluateJavaScript:_windowChromeScript.get() completionHandler:nil];
 }
 
 - (void)setDelegate:(id <WKInspectorViewControllerDelegate>)delegate
@@ -235,6 +312,8 @@ static void* const safeAreaInsetsKVOContext = (void*)&safeAreaInsetsKVOContext;
 
 - (void)didAttachOrDetach
 {
+    [self _updateWindowChrome];
+
 #if ENABLE(CONTENT_INSET_BACKGROUND_FILL)
     RetainPtr attachedView = [self _horizontallyAttachedInspectedWebView];
     [_webView _setOverrideTopScrollEdgeEffectColor:[attachedView _topScrollPocket].captureColor];
@@ -325,6 +404,12 @@ static void* const safeAreaInsetsKVOContext = (void*)&safeAreaInsetsKVOContext;
 
 // MARK: WKNavigationDelegate methods
 
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation
+{
+    _windowChromeScript = nil;
+    [self _updateWindowChrome];
+}
+
 - (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView
 {
     RetainPtr delegate = _delegate.get();
@@ -400,6 +485,8 @@ static void* const safeAreaInsetsKVOContext = (void*)&safeAreaInsetsKVOContext;
 
 - (void)inspectorWKWebViewDidMoveToWindow:(WKInspectorWKWebView *)webView
 {
+    [self _updateWindowChrome];
+
     RetainPtr delegate = _delegate.get();
     if (!!delegate && [delegate respondsToSelector:@selector(inspectorViewControllerDidMoveToWindow:)])
         [delegate inspectorViewControllerDidMoveToWindow:self];

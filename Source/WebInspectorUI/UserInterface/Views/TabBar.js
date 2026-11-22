@@ -654,6 +654,12 @@ WI.TabBar = class TabBar extends WI.View
         if (event.button !== 0 || event.ctrlKey)
             return;
 
+        if (WI.dockConfiguration === WI.DockConfiguration.Undocked && document.documentElement.classList.contains("quickie-unified-titlebar")) {
+            if (event.target === this.element || event.target === this._tabContainer)
+                WI.moveUndockedWindowMouseDown(event);
+            return;
+        }
+
         if (event.target !== this.element)
             return;
 

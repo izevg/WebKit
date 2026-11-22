@@ -55,6 +55,13 @@ WI.NavigationBar = class NavigationBar extends WI.View
     // Public
 
     get sizesToFit() { return this._sizesToFit; }
+    set sizesToFit(sizesToFit)
+    {
+        if (this._sizesToFit === sizesToFit)
+            return;
+        this._sizesToFit = sizesToFit;
+        this.needsLayout();
+    }
 
     addNavigationItem(navigationItem, parentElement)
     {

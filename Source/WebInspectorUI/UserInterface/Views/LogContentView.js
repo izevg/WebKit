@@ -63,6 +63,10 @@ WI.LogContentView = class LogContentView extends WI.ContentView
         this._findBanner = new WI.FindBanner(this, {alwaysShowing: true, className: "console"});
         this._findBanner.visibilityPriority = WI.NavigationItem.VisibilityPriority.High;
         this._findBanner.targetElement = this.element;
+        if (document.body.classList.contains("quickie-local-inspector")) {
+            this._findBanner.inputField.placeholder = WI.unlocalizedString("Filter output\u2026");
+            this._findBanner.inputField.setAttribute("aria-label", WI.unlocalizedString("Filter Console output"));
+        }
 
         this._currentSearchQuery = "";
         this._searchMatches = [];
@@ -152,15 +156,23 @@ WI.LogContentView = class LogContentView extends WI.ContentView
 
     get navigationItems()
     {
-        let navigationItems = [
-            this._findBanner,
-            this._scopeBar,
-        ];
+        let usesWideToolbar = document.body.classList.contains("quickie-local-inspector") && WI.isShowingConsoleTab();
+        if (usesWideToolbar) {
+            this._clearLogNavigationItem.label = WI.unlocalizedString("Clear");
+            this._clearLogNavigationItem.buttonStyle = WI.ButtonNavigationItem.Style.ImageAndText;
+        } else
+            this._clearLogNavigationItem.buttonStyle = WI.ButtonNavigationItem.Style.Image;
+
+        let navigationItems = usesWideToolbar
+            ? [this._clearLogNavigationItem, this._findBanner, new WI.FlexibleSpaceNavigationItem, this._scopeBar]
+            : [this._findBanner, this._scopeBar];
 
         if (this._hasNonDefaultLogChannelMessage && this._messageSourceBar)
             navigationItems.push(new WI.DividerNavigationItem, this._messageSourceBar);
 
-        navigationItems.push(this._otherFiltersNavigationItem, new WI.FlexibleSpaceNavigationItem);
+        navigationItems.push(this._otherFiltersNavigationItem);
+        if (!usesWideToolbar)
+            navigationItems.push(new WI.FlexibleSpaceNavigationItem);
 
         if (this._emulateUserGestureNavigationItemGroup)
             navigationItems.push(this._emulateUserGestureNavigationItemGroup);
@@ -170,7 +182,8 @@ WI.LogContentView = class LogContentView extends WI.ContentView
         if (InspectorBackend.hasCommand("Heap.gc"))
             navigationItems.push(this._garbageCollectNavigationItem);
 
-        navigationItems.push(this._clearLogNavigationItem);
+        if (!usesWideToolbar)
+            navigationItems.push(this._clearLogNavigationItem);
 
         if (WI.isShowingSplitConsole())
             navigationItems.push(new WI.DividerNavigationItem, this._showConsoleTabNavigationItem);

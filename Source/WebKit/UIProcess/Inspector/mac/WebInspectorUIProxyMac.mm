@@ -77,7 +77,10 @@ static void* kWindowContentLayoutObserverContext = &kWindowContentLayoutObserver
 
 @implementation WKQuickieInspectorDockView {
     RetainPtr<NSView> _surface;
+    RetainPtr<CGPathRef> _surfacePath;
 }
+
+static constexpr CGFloat inspectorSurfaceCornerRadius = 16;
 
 - (instancetype)initWithWebView:(WKWebView *)webView
 {
@@ -95,8 +98,7 @@ static void* kWindowContentLayoutObserverContext = &kWindowContentLayoutObserver
     _surface = adoptNS([[NSView alloc] initWithFrame:NSZeroRect]);
     [_surface setWantsLayer:YES];
     RetainPtr surfaceLayer = [_surface layer];
-    surfaceLayer.get().cornerRadius = 16;
-    surfaceLayer.get().cornerCurve = kCACornerCurveContinuous;
+    surfaceLayer.get().cornerRadius = inspectorSurfaceCornerRadius;
     surfaceLayer.get().masksToBounds = YES;
     [self addSubview:_surface.get()];
 
@@ -115,6 +117,8 @@ static void* kWindowContentLayoutObserverContext = &kWindowContentLayoutObserver
     constexpr CGFloat inset = WebCore::InspectorFrontendClientLocal::attachedWindowInset;
     NSRect surfaceFrame = NSInsetRect(self.bounds, inset, inset);
     [_surface setFrame:surfaceFrame];
+    // Only the visible surface should intercept events from the inspected page.
+    _surfacePath = adoptCF(CGPathCreateWithRoundedRect(NSRectToCGRect(surfaceFrame), inspectorSurfaceCornerRadius, inspectorSurfaceCornerRadius, nullptr));
 
     NSRect shadowFrame = NSInsetRect(surfaceFrame, 10, 10);
     RetainPtr shadowPath = adoptCF(CGPathCreateWithRoundedRect(NSRectToCGRect(shadowFrame), 6, 6, nullptr));
@@ -122,6 +126,14 @@ static void* kWindowContentLayoutObserverContext = &kWindowContentLayoutObserver
     [CATransaction setDisableActions:YES];
     [retainPtr(self.layer) setShadowPath:shadowPath.get()];
     [CATransaction commit];
+}
+
+- (NSView *)hitTest:(NSPoint)point
+{
+    auto localPoint = [self convertPoint:point fromView:self.superview];
+    if (!_surfacePath || !CGPathContainsPoint(_surfacePath.get(), nullptr, NSPointToCGPoint(localPoint), false))
+        return nil;
+    return [super hitTest:point];
 }
 
 @end
@@ -846,6 +858,10 @@ RetainPtr<NSWindow> WebInspectorUIProxy::createFrontendWindow(NSRect savedWindow
     [window setCollectionBehavior:([window collectionBehavior] | NSWindowCollectionBehaviorFullScreenAllowsTiling | NSWindowCollectionBehaviorAuxiliary)];
 
     [window setTitlebarAppearsTransparent:YES];
+    if (!forRemoteTarget) {
+        [window setTitleVisibility:NSWindowTitleHidden];
+        [window setTitlebarSeparatorStyle:NSTitlebarSeparatorStyleNone];
+    }
 
     // Center the window if the saved frame was empty.
     if (NSIsEmptyRect(savedWindowFrame))
@@ -1076,8 +1092,7 @@ bool WebInspectorUIProxy::platformCanAttach(bool webProcessCanAttach)
     static constexpr CGFloat minimumAttachedHeight = 250;
     static constexpr CGFloat maximumAttachedHeightRatio = 0.75;
     static constexpr CGFloat minimumAttachedWidth = 500;
-    RetainPtr parent = [inspectedView superview];
-    NSRect allocation = m_isAttached && parent ? parent.get().bounds : inspectedView.get().frame;
+    NSRect allocation = inspectedView.get().frame;
     return minimumAttachedHeight <= NSHeight(allocation) * maximumAttachedHeightRatio && minimumAttachedWidth <= NSWidth(allocation);
 }
 
@@ -1091,9 +1106,7 @@ bool WebInspectorUIProxy::platformCanAttachToSide(AttachmentSide side)
         return false;
 
     RetainPtr inspectedView = inspectedPage->inspectorAttachmentView();
-    RetainPtr parent = [inspectedView superview];
-    NSRect allocation = parent ? parent.get().bounds : inspectedView.get().frame;
-    return InspectorFrontendClientLocal::canAttachWindowToSide(NSWidth(allocation));
+    return InspectorFrontendClientLocal::canAttachWindowToSide(NSWidth(inspectedView.get().frame));
 }
 
 void WebInspectorUIProxy::platformAttachAvailabilityChanged(bool available)
@@ -1213,7 +1226,8 @@ void WebInspectorUIProxy::windowFullScreenDidChange()
     if (m_isAttached || !m_isVisible || !m_inspectorWindow)
         return;
 
-    attachAvailabilityChanged(platformCanAttach(canAttach()));    
+    [m_inspectorViewController didAttachOrDetach];
+    attachAvailabilityChanged(platformCanAttach(canAttach()));
 }
 
 void WebInspectorUIProxy::inspectedViewFrameDidChange(CGFloat currentDimension)
@@ -1242,10 +1256,8 @@ void WebInspectorUIProxy::inspectedViewFrameDidChange(CGFloat currentDimension)
     NSRect inspectedViewFrame = inspectedView.get().frame;
     NSRect oldInspectorViewFrame = attachmentContainer.get().frame;
     NSRect newInspectorViewFrame = NSZeroRect;
-    NSRect parentBounds = parent.get().bounds;
-    CGFloat inspectedViewTop = NSMaxY(inspectedViewFrame);
 
-    if (m_attachmentSide != AttachmentSide::Bottom && !InspectorFrontendClientLocal::canAttachWindowToSide(NSWidth(parentBounds))) {
+    if (m_attachmentSide != AttachmentSide::Bottom && !InspectorFrontendClientLocal::canAttachWindowToSide(NSWidth(inspectedViewFrame))) {
         if (platformCanAttach(canAttach()))
             attachWithPreference(AttachmentSide::Bottom, false);
         else
@@ -1264,7 +1276,7 @@ void WebInspectorUIProxy::inspectedViewFrameDidChange(CGFloat currentDimension)
         if (!inspectorWindow)
             return frameIgnoringContentLayoutRect;
 
-        auto contentLayoutRect = [retainPtr([inspectedView superview]) convertRect:[inspectorWindow contentLayoutRect] fromView:nil];
+        auto contentLayoutRect = [parent convertRect:[inspectorWindow contentLayoutRect] fromView:nil];
         return NSIntersectionRect(frameIgnoringContentLayoutRect, contentLayoutRect);
     };
 
@@ -1273,12 +1285,9 @@ void WebInspectorUIProxy::inspectedViewFrameDidChange(CGFloat currentDimension)
         if (!currentDimension)
             currentDimension = NSHeight(oldInspectorViewFrame);
 
-        CGFloat parentHeight = NSHeight(parentBounds);
-        CGFloat inspectorHeight = InspectorFrontendClientLocal::constrainedAttachedWindowHeight(currentDimension, parentHeight);
-
-        // Preserve the top position of the inspected view so banners in Safari still work.
-        inspectedViewFrame = NSMakeRect(0, inspectorHeight, NSWidth(parentBounds), inspectedViewTop - inspectorHeight);
-        newInspectorViewFrame = NSMakeRect(0, 0, NSWidth(inspectedViewFrame), inspectorHeight);
+        CGFloat inspectorHeight = InspectorFrontendClientLocal::constrainedAttachedWindowHeight(currentDimension, NSHeight(inspectedViewFrame));
+        CGFloat bottomOrigin = [parent isFlipped] ? NSMaxY(inspectedViewFrame) - inspectorHeight : NSMinY(inspectedViewFrame);
+        newInspectorViewFrame = NSMakeRect(NSMinX(inspectedViewFrame), bottomOrigin, NSWidth(inspectedViewFrame), inspectorHeight);
         break;
     }
 
@@ -1286,13 +1295,8 @@ void WebInspectorUIProxy::inspectedViewFrameDidChange(CGFloat currentDimension)
         if (!currentDimension)
             currentDimension = NSWidth(oldInspectorViewFrame);
 
-        CGFloat parentWidth = NSWidth(parentBounds);
-        CGFloat inspectorWidth = InspectorFrontendClientLocal::constrainedAttachedWindowWidth(currentDimension, parentWidth);
-
-        // Preserve the top position of the inspected view so banners in Safari still work. But don't use that
-        // top position for the inspector view since the banners only stretch as wide as the inspected view.
-        inspectedViewFrame = NSMakeRect(0, 0, parentWidth - inspectorWidth, inspectedViewTop);
-        newInspectorViewFrame = frameAdjustedForContentLayoutRect(NSMakeRect(parentWidth - inspectorWidth, 0, inspectorWidth, NSHeight(parentBounds)));
+        CGFloat inspectorWidth = InspectorFrontendClientLocal::constrainedAttachedWindowWidth(currentDimension, NSWidth(inspectedViewFrame));
+        newInspectorViewFrame = frameAdjustedForContentLayoutRect(NSMakeRect(NSMaxX(inspectedViewFrame) - inspectorWidth, NSMinY(inspectedViewFrame), inspectorWidth, NSHeight(inspectedViewFrame)));
         break;
     }
 
@@ -1300,27 +1304,16 @@ void WebInspectorUIProxy::inspectedViewFrameDidChange(CGFloat currentDimension)
         if (!currentDimension)
             currentDimension = NSWidth(oldInspectorViewFrame);
 
-        CGFloat parentWidth = NSWidth(parentBounds);
-        CGFloat inspectorWidth = InspectorFrontendClientLocal::constrainedAttachedWindowWidth(currentDimension, parentWidth);
-
-        // Preserve the top position of the inspected view so banners in Safari still work. But don't use that
-        // top position for the inspector view since the banners only stretch as wide as the inspected view.
-        inspectedViewFrame = NSMakeRect(inspectorWidth, 0, parentWidth - inspectorWidth, inspectedViewTop);
-        newInspectorViewFrame = frameAdjustedForContentLayoutRect(NSMakeRect(0, 0, inspectorWidth, NSHeight(parentBounds)));
+        CGFloat inspectorWidth = InspectorFrontendClientLocal::constrainedAttachedWindowWidth(currentDimension, NSWidth(inspectedViewFrame));
+        newInspectorViewFrame = frameAdjustedForContentLayoutRect(NSMakeRect(NSMinX(inspectedViewFrame), NSMinY(inspectedViewFrame), inspectorWidth, NSHeight(inspectedViewFrame)));
         break;
     }
     }
 
-    if (NSEqualRects(oldInspectorViewFrame, newInspectorViewFrame) && NSEqualRects([inspectedView frame], inspectedViewFrame))
+    if (NSEqualRects(oldInspectorViewFrame, newInspectorViewFrame))
         return;
 
-    // Disable screen updates to make sure the layers for both views resize in sync.
-    ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-    [retainPtr(inspectorView.get().window) disableScreenUpdatesUntilFlush];
-    ALLOW_DEPRECATED_DECLARATIONS_END
-
     [attachmentContainer setFrame:newInspectorViewFrame];
-    [inspectedView setFrame:inspectedViewFrame];
 }
 
 void WebInspectorUIProxy::platformAttach()
@@ -1347,12 +1340,15 @@ void WebInspectorUIProxy::platformAttach()
 
     m_inspectorDockView = adoptNS([[WKQuickieInspectorDockView alloc] initWithWebView:inspectorView.get()]);
 
+    RetainPtr parent = [inspectedView superview];
     CGFloat currentDimension;
     switch (m_attachmentSide) {
-    case AttachmentSide::Bottom:
-        [m_inspectorDockView setAutoresizingMask:NSViewWidthSizable | NSViewMaxYMargin];
+    case AttachmentSide::Bottom: {
+        auto flexibleTopMargin = [parent isFlipped] ? NSViewMinYMargin : NSViewMaxYMargin;
+        [m_inspectorDockView setAutoresizingMask:NSViewWidthSizable | flexibleTopMargin];
         currentDimension = protect(inspectorPagePreferences())->inspectorAttachedHeight();
         break;
+    }
     case AttachmentSide::Right:
         [m_inspectorDockView setAutoresizingMask:NSViewHeightSizable | NSViewMinXMargin];
         currentDimension = protect(inspectorPagePreferences())->inspectorAttachedWidth();
@@ -1365,7 +1361,7 @@ void WebInspectorUIProxy::platformAttach()
 
     inspectedViewFrameDidChange(currentDimension);
 
-    [retainPtr(inspectedView.get().superview) addSubview:m_inspectorDockView.get() positioned:NSWindowBelow relativeTo:inspectedView.get()];
+    [retainPtr(inspectedView.get().superview) addSubview:m_inspectorDockView.get() positioned:NSWindowAbove relativeTo:inspectedView.get()];
     [retainPtr(inspectorView.get().window) makeFirstResponder:inspectorView.get()];
 
     [m_inspectorViewController didAttachOrDetach];
@@ -1373,8 +1369,6 @@ void WebInspectorUIProxy::platformAttach()
 
 void WebInspectorUIProxy::platformDetach()
 {
-    RefPtr inspectedPage = m_inspectedPage.get();
-    RetainPtr inspectedView = inspectedPage ? inspectedPage->inspectorAttachmentView() : nil;
     RetainPtr<WKWebView> inspectorView = [m_inspectorViewController webView];
 
     [inspectorView removeFromSuperview];
@@ -1382,11 +1376,7 @@ void WebInspectorUIProxy::platformDetach()
     m_inspectorDockView = nil;
     [inspectorView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
 
-    if (!unwrapInspectedView(m_attachmentContainerView) && inspectedView) {
-        // Make sure that we size the inspected view's frame after detaching so that it takes up the space that the
-        // attached inspector used to. Preserve the top position of the inspected view so banners in Safari still work.
-        inspectedView.get().frame = NSMakeRect(0, 0, NSWidth(inspectedView.get().superview.bounds), NSMaxY(inspectedView.get().frame));
-    }
+    unwrapInspectedView(m_attachmentContainerView);
 
     // Return early if we are not visible. This means the inspector was closed while attached
     // and we should not create and show the inspector window.
