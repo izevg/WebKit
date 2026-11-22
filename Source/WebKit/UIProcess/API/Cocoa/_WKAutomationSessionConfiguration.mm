@@ -42,6 +42,7 @@
     _siteIsolationEnabled = NO;
     _controlledByExternalAgent = NO;
     _navigatorWebDriverEnabled = YES;
+    _inspectorPassthroughEnabled = NO;
 
     return self;
 }
@@ -57,6 +58,7 @@
     configuration.get().siteIsolationEnabled = self.siteIsolationEnabled;
     configuration.get().controlledByExternalAgent = self.controlledByExternalAgent;
     configuration.get().navigatorWebDriverEnabled = self.navigatorWebDriverEnabled;
+    configuration.get().inspectorPassthroughEnabled = self.inspectorPassthroughEnabled;
 
     return configuration.leakRef();
 }

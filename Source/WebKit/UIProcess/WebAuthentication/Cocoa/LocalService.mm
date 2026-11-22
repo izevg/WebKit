@@ -51,8 +51,10 @@ LocalService::LocalService(AuthenticatorTransportServiceObserver& observer)
 
 bool LocalService::isAvailable()
 {
+#if !ENABLE(WEB_AUTHN_OWN_MANAGER)
     if ([WebKit::getASCWebKitSPISupportClassSingleton() shouldUseAlternateCredentialStore]) \
         return YES;
+#endif
 
     auto context = adoptNS([allocLAContextInstance() init]);
     NSError *error = nil;

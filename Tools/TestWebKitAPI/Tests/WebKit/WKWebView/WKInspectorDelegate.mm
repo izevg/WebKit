@@ -442,4 +442,83 @@ TEST(WKInspectorDelegate, NoSiteIsolationBannerWithoutSiteIsolation)
     EXPECT_FALSE(frontendHasElement(webView.get(), siteIsolationBannerSelector));
 }
 
+TEST(WKInspectorDelegate, ShowTab)
+{
+    resetInspectorGlobalState();
+
+    RetainPtr webViewConfiguration = adoptNS([WKWebViewConfiguration new]);
+    webViewConfiguration.get().preferences._developerExtrasEnabled = YES;
+    RetainPtr webView = adoptNS([[WKWebView alloc] initWithFrame:CGRectMake(0, 0, 800, 600) configuration:webViewConfiguration.get()]);
+    RetainPtr uiDelegate = adoptNS([UIDelegateForTesting new]);
+
+    [webView setUIDelegate:uiDelegate.get()];
+    [webView loadHTMLString:@"<head><title>Test page to be inspected</title></head><body><p>Filler content</p></body>" baseURL:[NSURL URLWithString:@"http://example.com/"]];
+
+    RetainPtr inspector = [webView _inspector];
+    [inspector show];
+    [uiDelegate waitForDidAttachLocalInspector];
+    TestWebKitAPI::Util::run(&inspectorFrontendLoadedCalled);
+
+    RetainPtr inspectorWebView = [inspector inspectorWebView];
+    auto selectedTabIs = [&](NSString *tabIdentifier) {
+        return TestWebKitAPI::Util::waitFor([&] {
+            return [[inspectorWebView stringByEvaluatingJavaScript:@"WI.tabBrowser.selectedTabContentView?.type ?? ''"] isEqualToString:tabIdentifier];
+        });
+    };
+
+    for (NSString *tabIdentifier in @[ @"network", @"elements", @"timeline", @"sources", @"storage", @"console" ]) {
+        [inspector showTab:tabIdentifier];
+        EXPECT_TRUE(selectedTabIs(tabIdentifier)) << tabIdentifier.UTF8String;
+    }
+
+    // An unknown identifier leaves the selected tab alone.
+    [inspector showTab:@"no-such-tab"];
+    TestWebKitAPI::Util::runFor(0.5_s);
+    EXPECT_TRUE(selectedTabIs(@"console"));
+
+    [inspector close];
+    TestWebKitAPI::Util::run(&willCloseLocalInspectorCalled);
+}
+
+TEST(WKInspectorDelegate, AttachToSide)
+{
+    resetInspectorGlobalState();
+
+    RetainPtr webViewConfiguration = adoptNS([WKWebViewConfiguration new]);
+    webViewConfiguration.get().preferences._developerExtrasEnabled = YES;
+    // Attaching moves the inspector view into the inspected view's superview, so give it a window.
+    RetainPtr webView = adoptNS([[TestWKWebView alloc] initWithFrame:CGRectMake(0, 0, 800, 600) configuration:webViewConfiguration.get() addToWindow:YES]);
+    RetainPtr uiDelegate = adoptNS([UIDelegateForTesting new]);
+
+    [webView setUIDelegate:uiDelegate.get()];
+    [webView loadHTMLString:@"<head><title>Test page to be inspected</title></head><body><p>Filler content</p></body>" baseURL:[NSURL URLWithString:@"http://example.com/"]];
+
+    RetainPtr inspector = [webView _inspector];
+    [inspector show];
+    [uiDelegate waitForDidAttachLocalInspector];
+    TestWebKitAPI::Util::run(&inspectorFrontendLoadedCalled);
+
+    RetainPtr inspectorWebView = [inspector inspectorWebView];
+    auto dockConfigurationIs = [&](NSString *dockConfiguration) {
+        return TestWebKitAPI::Util::waitFor([&] {
+            return [[inspectorWebView stringByEvaluatingJavaScript:@"WI.dockConfiguration"] isEqualToString:dockConfiguration];
+        });
+    };
+
+    [inspector attachToSide:_WKInspectorAttachmentSideRight];
+    EXPECT_TRUE(dockConfigurationIs(@"right"));
+
+    [inspector attachToSide:_WKInspectorAttachmentSideLeft];
+    EXPECT_TRUE(dockConfigurationIs(@"left"));
+
+    [inspector attachToSide:_WKInspectorAttachmentSideBottom];
+    EXPECT_TRUE(dockConfigurationIs(@"bottom"));
+
+    [inspector detach];
+    EXPECT_TRUE(dockConfigurationIs(@"undocked"));
+
+    [inspector close];
+    TestWebKitAPI::Util::run(&willCloseLocalInspectorCalled);
+}
+
 #endif // PLATFORM(MAC)

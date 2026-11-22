@@ -2370,11 +2370,16 @@ TEST(WebpagePreferences, GlobalPrivacyControlNavigatorAPI)
     EXPECT_WK_STREQ([webView _test_waitForAlert], "false");
 }
 
-TEST(WebpagePreferences, GlobalPrivacyControlNavigatorAPINotSet)
+TEST(WebpagePreferences, GlobalPrivacyControlOnByDefault)
 {
     RetainPtr webView = adoptNS([TestWKWebView new]);
-    [webView loadHTMLString:@"<script>alert(String(navigator.globalPrivacyControl))</script>" baseURL:nil];
-    EXPECT_WK_STREQ([webView _test_waitForAlert], "undefined");
+
+    NSString *html = @"<script>"
+        "const worker = new Worker(URL.createObjectURL(new Blob(['postMessage(navigator.globalPrivacyControl)'], { type: 'text/javascript' })));"
+        "worker.onmessage = (event) => alert(String(navigator.globalPrivacyControl) + ' ' + String(event.data));"
+        "</script>";
+    [webView loadHTMLString:html baseURL:[NSURL URLWithString:@"https://example.com/"]];
+    EXPECT_WK_STREQ([webView _test_waitForAlert], "true true");
 }
 
 TEST(WebpagePreferences, GlobalPrivacyControlRequestHeader)
@@ -2401,7 +2406,7 @@ TEST(WebpagePreferences, GlobalPrivacyControlRequestHeader)
             continue;
         }
         if (path == "/no-override"_s) {
-            EXPECT_FALSE(hasGPCHeader);
+            EXPECT_TRUE(hasGPCHeader);
             sawNoOverrideRequest = true;
             co_await connection.awaitableSend(HTTPResponse(""_s).serialize());
             continue;

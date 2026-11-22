@@ -40,6 +40,10 @@ WK_CLASS_AVAILABLE(macos(10.13.4), ios(12.2))
 @property (nonatomic) BOOL controlledByExternalAgent;
 @property (nonatomic) BOOL navigatorWebDriverEnabled;
 
+/// Enables Automation.sendInspectorMessage without the delegate's inspector testing opt-in.
+/// Read when the session is created. Defaults to NO.
+@property (nonatomic) BOOL inspectorPassthroughEnabled WK_API_AVAILABLE(macos(WK_MAC_TBA), ios(WK_IOS_TBA), visionos(WK_XROS_TBA));
+
 @end
 
 NS_ASSUME_NONNULL_END

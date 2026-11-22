@@ -103,6 +103,7 @@ class WebProcessPool;
 
 #if ENABLE(REMOTE_INSPECTOR)
 class InspectorPassthroughChannel;
+class LocalAutomationClientChannel;
 #endif
 
 #if ENABLE(WEBDRIVER_BIDI)
@@ -240,6 +241,16 @@ public:
     void init();
     NODELETE bool isPaired() const;
     NODELETE bool isPendingTermination() const;
+
+    // Messages from the session reach the local client asynchronously and in order.
+    // Disconnecting drops queued messages. To keep the session out of RemoteInspector,
+    // connect the local client before WebProcessPool::setAutomationSession().
+    bool connectLocalClient(Function<void(const String&)>&& messageHandler);
+    void disconnectLocalClient();
+    // Returns false if the local client or process pool is unavailable.
+    bool dispatchMessageFromLocalClient(String&& message);
+    bool hasLocalClient() const { return !!m_localClientChannel; }
+    void setInspectorPassthroughEnabled(bool enabled) { m_inspectorPassthroughEnabled = enabled; }
 #endif
 
     void terminate();
@@ -648,6 +659,9 @@ private:
 #if ENABLE(REMOTE_INSPECTOR)
     Inspector::FrontendChannel* m_remoteChannel { nullptr };
     const Ref<Debuggable> m_debuggable;
+    std::unique_ptr<LocalAutomationClientChannel> m_localClientChannel;
+    bool m_isLocalSession { false };
+    bool m_inspectorPassthroughEnabled { false };
 #endif
 
     // Web Inspector backend passthrough: clients with the

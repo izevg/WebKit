@@ -48,6 +48,34 @@ WK_CLASS_AVAILABLE(macos(10.12), ios(10.0))
 
 - (void)terminate WK_API_AVAILABLE(macos(10.14), ios(12.0));
 
+/*!
+ @abstract Connects an in-process automation client to this session.
+ @param messageHandler Receives every Automation protocol message the session
+ sends (command responses and events) as a JSON string. It is called on the
+ main thread, asynchronously and in order; it may call -dispatchMessage:,
+ -disconnectLocalClient or -terminate. Messages still queued when the client
+ disconnects are dropped.
+ @result NO if a client or remote driver is already connected, or if the session
+ was already set on a process pool. Call this before
+ -[WKProcessPool _setAutomationSession:]; such a session is never advertised to
+ the remote inspector (no webinspectord pairing, no TCP port).
+ */
+- (BOOL)connectLocalClient:(void (^)(NSString *message))messageHandler WK_API_AVAILABLE(macos(WK_MAC_TBA), ios(WK_IOS_TBA), visionos(WK_XROS_TBA));
+
+/*!
+ @abstract Dispatches one Automation protocol command (a JSON string with "id",
+ "method" and optional "params") from the local client. Main thread only.
+ @result NO if no local client is connected or the session is not set on a
+ process pool; the command is not dispatched then.
+ */
+- (BOOL)dispatchMessage:(NSString *)message WK_API_AVAILABLE(macos(WK_MAC_TBA), ios(WK_IOS_TBA), visionos(WK_XROS_TBA));
+
+/*!
+ @abstract Disconnects the local client and ends the session, as a remote driver
+ hanging up would: the delegate receives -_automationSessionDidDisconnectFromRemote:.
+ */
+- (void)disconnectLocalClient WK_API_AVAILABLE(macos(WK_MAC_TBA), ios(WK_IOS_TBA), visionos(WK_XROS_TBA));
+
 #if !TARGET_OS_IPHONE
 - (BOOL)wasEventSynthesizedForAutomation:(NSEvent *)event;
 - (void)markEventAsSynthesizedForAutomation:(NSEvent *)event;

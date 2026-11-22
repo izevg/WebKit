@@ -487,6 +487,27 @@ void webkit_web_inspector_show(WebKitWebInspector* inspector)
 }
 
 /**
+ * webkit_web_inspector_show_tab:
+ * @inspector: a #WebKitWebInspector
+ * @tab_identifier: the tab to select
+ *
+ * Request @inspector to be shown with the tab @tab_identifier selected.
+ *
+ * @tab_identifier is one of `elements`, `network`, `sources`, `timeline`,
+ * `storage`, `graphics`, `layers`, `audit` or `console`. Unknown identifiers
+ * and tabs that are not available for the inspected page are ignored.
+ *
+ * Since: 2.56
+ */
+void webkit_web_inspector_show_tab(WebKitWebInspector* inspector, const char* tabIdentifier)
+{
+    g_return_if_fail(WEBKIT_IS_WEB_INSPECTOR(inspector));
+    g_return_if_fail(tabIdentifier);
+
+    inspector->priv->webInspector->showTab(String::fromUTF8(tabIdentifier));
+}
+
+/**
  * webkit_web_inspector_close:
  * @inspector: a #WebKitWebInspector
  *

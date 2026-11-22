@@ -72,8 +72,10 @@ static inline String groupForAttributes(NSDictionary *attributes)
 
 static bool shouldUpdateQuery()
 {
+#if !ENABLE(WEB_AUTHN_OWN_MANAGER)
     if (WebKit::getASCWebKitSPISupportClassSingleton())
         return [WebKit::getASCWebKitSPISupportClassSingleton() shouldUseAlternateCredentialStore];
+#endif
 
     return false;
 }
@@ -111,7 +113,7 @@ using CBOR = cbor::CBORValue;
 
 BOOL shouldUseAlternateKeychainAttribute()
 {
-#if HAVE(UNIFIED_ASC_AUTH_UI)
+#if HAVE(UNIFIED_ASC_AUTH_UI) && !ENABLE(WEB_AUTHN_OWN_MANAGER)
     if (![WebKit::getASCWebKitSPISupportClassSingleton() respondsToSelector:@selector(shouldUseAlternateKeychainAttribute)])
         return NO;
 
@@ -128,6 +130,7 @@ constexpr uint64_t counter = 0;
 constexpr std::array<uint8_t, 16> aaguid = { 0xFB, 0xFC, 0x30, 0x07, 0x15, 0x4E, 0x4E, 0xCC, 0x8C, 0x0B, 0x6E, 0x02, 0x05, 0x57, 0xD7, 0xBD }; // Randomly generated.
 
 constexpr char kLargeBlobMapKey[] = "largeBlob";
+#if !ENABLE(WEB_AUTHN_OWN_MANAGER)
 static const int64_t coseAlgorithmES256 = -7;
 const uint8_t enterpriseAAGUID[] = { 0xDD, 0x4E, 0xC2, 0x89, 0xE0, 0x1D, 0x41, 0xC9, 0xBB, 0x89, 0x70, 0xFA, 0x84, 0x5D, 0x4B, 0xF2 };
 
@@ -210,6 +213,7 @@ static inline void performEnterpriseAttestation(const WebCore::PublicKeyCredenti
     auto attestationObject = buildAttestationObject(WTF::move(authData), "packed"_s, WTF::move(attestationStatementMap), creationOptions.attestation);
     completionHandler(WTF::move(attestationObject), std::nullopt);
 }
+#endif // !ENABLE(WEB_AUTHN_OWN_MANAGER)
 
 static inline bool emptyTransportsOrContain(const Vector<AuthenticatorTransport>& transports, AuthenticatorTransport target)
 {
@@ -265,8 +269,12 @@ static inline Ref<ArrayBuffer> toArrayBuffer(std::span<const uint8_t> data)
 
 static Vector<AuthenticatorTransport> transports()
 {
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    return { AuthenticatorTransport::Internal };
+#else
     Vector<WebCore::AuthenticatorTransport> transports = { WebCore::AuthenticatorTransport::Hybrid, WebCore::AuthenticatorTransport::Internal };
     return transports;
+#endif
 }
 
 } // LocalAuthenticatorInternal
@@ -277,7 +285,7 @@ void LocalAuthenticator::clearAllCredentials()
     auto query = adoptNS([[NSMutableDictionary alloc] init]);
     [query setDictionary:@{
         (id)kSecClass: (id)kSecClassKey,
-        (id)kSecAttrAccessGroup: LocalAuthenticatorAccessGroup,
+        (id)kSecAttrAccessGroup: WebCore::localAuthenticatorAccessGroup(),
         (id)kSecUseDataProtectionKeychain: @YES
     }];
     updateQueryIfNecessary(query.get());
@@ -662,6 +670,10 @@ void LocalAuthenticator::continueMakeCredentialAfterUserVerification(SecAccessCo
     // Skip attestation.
     auto authData = buildAuthData(creationOptions.rp.id, flags, counter, buildAttestedCredentialData(aaguidVector(), credentialId, cosePublicKey));
 
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    // The local credential has no enterprise attestation identity or synced iCloud AAGUID.
+    auto attestationObject = buildAttestationObject(WTF::move(authData), String { emptyString() }, { }, AttestationConveyancePreference::None, WebCore::ShouldZeroAAGUID::Yes);
+#else
     if (creationOptions.attestation == AttestationConveyancePreference::Enterprise) {
         auto callback = [credentialId = WTF::move(credentialId), weakThis = WeakPtr { *this }] (Vector<uint8_t>&& attestationObject, std::optional<ExceptionData> exception) mutable {
             RELEASE_ASSERT(RunLoop::isMain());
@@ -674,6 +686,7 @@ void LocalAuthenticator::continueMakeCredentialAfterUserVerification(SecAccessCo
     }
 
     auto attestationObject = buildAttestationObject(WTF::move(authData), String { emptyString() }, { }, AttestationConveyancePreference::None);
+#endif
 
     finishMakeCredential(WTF::move(credentialId), WTF::move(attestationObject), std::nullopt);
 }

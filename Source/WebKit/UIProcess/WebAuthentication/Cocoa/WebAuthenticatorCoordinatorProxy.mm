@@ -32,6 +32,7 @@
 #import "APIPageConfiguration.h"
 #import "APIUIClient.h"
 #import "ArgumentCoders.h"
+#import "AuthenticatorManager.h"
 #import "LocalService.h"
 #import "Logging.h"
 #import "PageClient.h"
@@ -42,6 +43,7 @@
 #import "WebAuthenticationRequestData.h"
 #import "WebPageProxy.h"
 #import "WebPreferences.h"
+#import "WebsiteDataStore.h"
 #import <WebCore/AllAcceptedCredentialsOptions.h>
 #import <WebCore/AuthenticatorAttachment.h>
 #import <WebCore/AuthenticatorResponseData.h>
@@ -580,6 +582,7 @@ void WebAuthenticatorCoordinatorProxy::makeActiveConditionalAssertion()
     unpauseConditionalAssertion();
 }
 
+#if !ENABLE(WEB_AUTHN_OWN_MANAGER)
 inline static Vector<AuthenticatorTransport> toTransports(NSArray<ASAuthorizationSecurityKeyPublicKeyCredentialDescriptorTransport> *asTransports)
 {
     Vector<AuthenticatorTransport> transports;
@@ -596,6 +599,7 @@ NODELETE static inline AuthenticatorAttachment fromASAuthorizationPublicKeyCrede
         return AuthenticatorAttachment::Platform;
     return AuthenticatorAttachment::CrossPlatform;
 }
+#endif
 
 #endif // HAVE(WEB_AUTHN_AS_MODERN)
 
@@ -626,6 +630,17 @@ void WebAuthenticatorCoordinatorProxy::performRequest(WebAuthenticationRequestDa
 
     auto callerOrigin = requestData.callerOrigin();
 
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    if (!relyingPartyIdentifier.isEmpty() && !callerOrigin.securityOrigin()->isMatchingRegistrableDomainSuffix(relyingPartyIdentifier)) {
+        handler({ }, AuthenticatorAttachment::Platform, ExceptionData { ExceptionCode::SecurityError, "The origin of the document is not authorized for the provided RP ID."_s });
+        return;
+    }
+
+    if (auto* requestOptions = std::get_if<PublicKeyCredentialRequestOptions>(&requestData.options); requestOptions && requestOptions->extensions)
+        requestOptions->extensions->crossDeviceFallbackURL = nullString();
+
+    performRequestWithValidatedRelyingPartyIdentifier(WTF::move(requestData), WTF::move(handler));
+#else
     std::optional<SecurityOriginData> fallbackOrigin;
     if (auto* requestOptions = std::get_if<PublicKeyCredentialRequestOptions>(&requestData.options)) {
         if (requestOptions->extensions && !requestOptions->extensions->crossDeviceFallbackURL.isNull()) {
@@ -671,6 +686,7 @@ void WebAuthenticatorCoordinatorProxy::performRequest(WebAuthenticationRequestDa
 
         protectedThis->performRequestWithValidatedRelyingPartyIdentifier(WTF::move(requestData), WTF::move(handler));
     });
+#endif // ENABLE(WEB_AUTHN_OWN_MANAGER)
 }
 
 void WebAuthenticatorCoordinatorProxy::performRequestWithValidatedRelyingPartyIdentifier(WebAuthenticationRequestData &&requestData, RequestCompletionHandler &&handler)
@@ -686,6 +702,9 @@ void WebAuthenticatorCoordinatorProxy::performRequestWithValidatedRelyingPartyId
         return;
     }
 
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    handleRequestWithAuthenticatorManager(WTF::move(requestData), WTF::move(handler));
+#else
 #if HAVE(UNIFIED_ASC_AUTH_UI)
     if (!protect(webPageProxy->preferences())->webAuthenticationASEnabled()) {
         auto context = contextForRequest(WTF::move(requestData));
@@ -901,6 +920,7 @@ void WebAuthenticatorCoordinatorProxy::performRequestWithValidatedRelyingPartyId
         [m_controller performRequests];
     }
 #endif
+#endif // ENABLE(WEB_AUTHN_OWN_MANAGER)
 }
 
 #if HAVE(UNIFIED_ASC_AUTH_UI)
@@ -1381,6 +1401,7 @@ void WebAuthenticatorCoordinatorProxy::performRequestLegacy(RetainPtr<ASCCredent
 }
 #endif // HAVE(UNIFIED_ASC_AUTH_UI)
 
+#if !ENABLE(WEB_AUTHN_OWN_MANAGER)
 static inline void getCanCurrentProcessAccessPasskeyForRelyingParty(const WebCore::SecurityOriginData& data, CompletionHandler<void(bool)>&& handler)
 {
     if ([getASCWebKitSPISupportClassSingleton() respondsToSelector:@selector(getCanCurrentProcessAccessPasskeysForRelyingParty:withCompletionHandler:)]) {
@@ -1406,17 +1427,24 @@ static inline void getArePasskeysDisallowedForRelyingParty(const WebCore::Securi
     }
     handler(false);
 }
+#endif // !ENABLE(WEB_AUTHN_OWN_MANAGER)
 
 void WebAuthenticatorCoordinatorProxy::isConditionalMediationAvailable(IPC::Connection& connection, IPC::Untrusted<WebCore::SecurityOriginData>&& untrustedOrigin, QueryCompletionHandler&& handler)
 {
     EXTRACT_WITH_MESSAGE_CHECK_COMPLETION(data, untrustedOrigin, handler(false), ProcessSpeaksForDomain { connection });
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    UNUSED_PARAM(data);
+    handler(false);
+#else
     getCanCurrentProcessAccessPasskeyForRelyingParty(data, [handler = WTF::move(handler)](bool canAccessPasskeyData) mutable {
         handler(canAccessPasskeyData && [getASCWebKitSPISupportClassSingleton() shouldUseAlternateCredentialStore]);
     });
+#endif
 }
 
 static constexpr auto relatedOriginsCapability = "relatedOrigins"_s;
 
+#if !ENABLE(WEB_AUTHN_OWN_MANAGER)
 static void setRelatedOriginsCapability(Vector<KeyValuePair<String, bool>>& capabilities)
 {
     auto index = capabilities.findIf([](auto& capability) {
@@ -1429,10 +1457,28 @@ static void setRelatedOriginsCapability(Vector<KeyValuePair<String, bool>>& capa
 
     capabilities.append({ relatedOriginsCapability, true });
 }
+#endif
 
 void WebAuthenticatorCoordinatorProxy::getClientCapabilities(IPC::Connection& connection, IPC::Untrusted<WebCore::SecurityOriginData>&& untrustedOrigin, CapabilitiesCompletionHandler&& handler)
 {
     EXTRACT_WITH_MESSAGE_CHECK_COMPLETION(originData, untrustedOrigin, handler({ }), ProcessSpeaksForDomain { connection });
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    UNUSED_PARAM(originData);
+    RefPtr webPageProxy = m_webPageProxy;
+    bool hasLocalAuthenticator = webPageProxy && !webPageProxy->configuration().backgroundTextExtractionEnabled() && LocalService::isAvailable();
+    Vector<KeyValuePair<String, bool>> capabilities {
+        { "conditionalCreate"_s, false },
+        { "conditionalGet"_s, false },
+        { "hybridTransport"_s, false },
+        { "passkeyPlatformAuthenticator"_s, hasLocalAuthenticator },
+        { relatedOriginsCapability, false },
+        { "signalAllAcceptedCredentials"_s, false },
+        { "signalCurrentUserDetails"_s, false },
+        { "signalUnknownCredential"_s, false },
+        { "userVerifyingPlatformAuthenticator"_s, hasLocalAuthenticator },
+    };
+    handler(WTF::move(capabilities));
+#else
     if (![getASCWebKitSPISupportClassSingleton() respondsToSelector:@selector(getClientCapabilitiesForRelyingParty:withCompletionHandler:)]) {
         Vector<KeyValuePair<String, bool>> capabilities;
         setRelatedOriginsCapability(capabilities);
@@ -1451,6 +1497,7 @@ void WebAuthenticatorCoordinatorProxy::getClientCapabilities(IPC::Connection& co
             handler(WTF::move(capabilities));
         });
     }).get()];
+#endif
 }
 
 void WebAuthenticatorCoordinatorProxy::isUserVerifyingPlatformAuthenticatorAvailable(IPC::Connection& connection, IPC::Untrusted<SecurityOriginData>&& untrustedOrigin, QueryCompletionHandler&& handler)
@@ -1461,6 +1508,10 @@ void WebAuthenticatorCoordinatorProxy::isUserVerifyingPlatformAuthenticatorAvail
         return;
     }
 
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    UNUSED_PARAM(data);
+    handler(LocalService::isAvailable());
+#else
     getCanCurrentProcessAccessPasskeyForRelyingParty(data, [handler = WTF::move(handler), data](bool canAccessPasskeyData) mutable {
         if (!canAccessPasskeyData) {
             handler(false);
@@ -1483,10 +1534,16 @@ void WebAuthenticatorCoordinatorProxy::isUserVerifyingPlatformAuthenticatorAvail
             handler(!passkeysDisallowed);
         });
     });
+#endif
 }
 
 void WebAuthenticatorCoordinatorProxy::cancel(CompletionHandler<void()>&& handler)
 {
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    if (RefPtr webPageProxy = m_webPageProxy)
+        protect(webPageProxy->websiteDataStore().authenticatorManager())->cancelRequest(webPageProxy->webPageIDInMainFrameProcess(), std::nullopt);
+    handler();
+#else
 #if HAVE(WEB_AUTHN_AS_MODERN)
     if (m_completionHandler || m_delegate) {
 #else
@@ -1516,6 +1573,7 @@ void WebAuthenticatorCoordinatorProxy::cancel(CompletionHandler<void()>&& handle
     if (m_controller)
         [m_controller cancel];
 #endif
+#endif // ENABLE(WEB_AUTHN_OWN_MANAGER)
 }
 
 void WebAuthenticatorCoordinatorProxy::signalUnknownCredential(IPC::Connection& connection, IPC::Untrusted<WebCore::SecurityOriginData>&& untrustedOrigin, WebCore::UnknownCredentialOptions&& options, CompletionHandler<void(std::optional<ExceptionData>)>&& completionHandler)
@@ -1531,7 +1589,7 @@ void WebAuthenticatorCoordinatorProxy::signalUnknownCredential(IPC::Connection& 
         return;
     }
 
-#if USE(APPLE_INTERNAL_SDK)
+#if USE(APPLE_INTERNAL_SDK) && !ENABLE(WEB_AUTHN_OWN_MANAGER)
     [getCredentialUpdaterShimClassSingleton() signalUnknownCredentialWithRelyingPartyIdentifier:options.rpId.createNSString().get() credentialID:WTF::toNSData(borrow(*decodedCredentialId)->span()).get() completionHandler:makeBlockPtr([completionHandler = WTF::move(completionHandler)](NSError *error) mutable {
         ensureOnMainRunLoop([error = protect(error), completionHandler = WTF::move(completionHandler)] mutable {
             if (error) {
@@ -1570,7 +1628,7 @@ void WebAuthenticatorCoordinatorProxy::signalAllAcceptedCredentials(IPC::Connect
         [credentialIds addObject:toNSData(borrow(*decodedCredentialId)->span()).get()];
     }
 
-#if USE(APPLE_INTERNAL_SDK)
+#if USE(APPLE_INTERNAL_SDK) && !ENABLE(WEB_AUTHN_OWN_MANAGER)
     [getCredentialUpdaterShimClassSingleton() signalAllAcceptedCredentialsWithRelyingPartyIdentifier:options.rpId.createNSString().get() userHandle:WTF::toNSData(borrow(*userHandle)->span()).get() acceptedCredentialIDs:credentialIds.get() completionHandler:makeBlockPtr([completionHandler = WTF::move(completionHandler)](NSError *error) mutable {
         ensureOnMainRunLoop([completionHandler = WTF::move(completionHandler), error = retainPtr(error)]() mutable {
             if (error) {
@@ -1599,7 +1657,7 @@ void WebAuthenticatorCoordinatorProxy::signalCurrentUserDetails(IPC::Connection&
         return;
     }
 
-#if USE(APPLE_INTERNAL_SDK)
+#if USE(APPLE_INTERNAL_SDK) && !ENABLE(WEB_AUTHN_OWN_MANAGER)
     [getCredentialUpdaterShimClassSingleton() signalCurrentUserDetailsWithRelyingPartyIdentifier:options.rpId.createNSString().get() userHandle:WTF::toNSData(borrow(*userHandle)->span()).get() newName:options.name.createNSString().get() completionHandler:makeBlockPtr([completionHandler = WTF::move(completionHandler)](NSError *error) mutable {
         ensureOnMainRunLoop([completionHandler = WTF::move(completionHandler), error = retainPtr(error)]() mutable {
             if (error) {

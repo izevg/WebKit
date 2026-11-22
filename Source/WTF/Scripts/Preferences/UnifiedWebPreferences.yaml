@@ -5183,9 +5183,7 @@ PrivateClickMeasurementEnabled:
   status: embedder
   humanReadableName: "Private Click Measurement"
   humanReadableDescription: "Enable Private Click Measurement for Cross-Site Link Navigations"
-  defaultValue:
-    default: true
-    WebKitLegacy: false
+  defaultValue: false
 
 PrivateClickMeasurementFraudPreventionEnabled:
   type: bool
@@ -5542,7 +5540,7 @@ SafeBrowsingEnabled:
   humanReadableName: "Safe Browsing"
   humanReadableDescription: "Enable Safe Browsing"
   excludeFrom: [ WebKitLegacy, WebCore ]
-  defaultValue: true
+  defaultValue: false
 
 SampledPageTopColorMaxDifference:
   type: double
@@ -6238,11 +6236,13 @@ SpeakerSelectionRequiresUserGesture:
 
 SpeculationRulesPrefetchEnabled:
   type: bool
-  status: stable
+  status: embedder
   category: html
   humanReadableName: "SpeculationRules prefetch"
   humanReadableDescription: "SpeculationRules prefetch"
-  defaultValue: true
+  defaultValue:
+    default: false
+    WebKitLegacy: true
   disableInLockdownMode: true
   sharedPreferenceForWebProcess: true
   richJavaScript: true

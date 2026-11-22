@@ -279,6 +279,17 @@ void WebInspectorUIProxy::showResources()
     protect(inspectedPage->legacyMainFrameProcess())->send(Messages::WebInspectorBackend::ShowResources(), inspectedPage->webPageIDInMainFrameProcess());
 }
 
+void WebInspectorUIProxy::showTab(const String& tabIdentifier)
+{
+    RefPtr inspectedPage = m_inspectedPage;
+    if (!inspectedPage)
+        return;
+
+    show();
+
+    protect(inspectedPage->legacyMainFrameProcess())->send(Messages::WebInspectorBackend::ShowTab(tabIdentifier), inspectedPage->webPageIDInMainFrameProcess());
+}
+
 void WebInspectorUIProxy::showMainResourceForFrame(WebCore::FrameIdentifier frameID)
 {
     RefPtr inspectedPage = m_inspectedPage.get();

@@ -432,6 +432,7 @@ Tests/WebKit/WKWebView/WebsitePolicies.mm @nonARC
 Tests/WebKit/WKWebView/WindowBlurInputChangeEvent.mm @nonARC
 Tests/WebKit/WKWebView/WritingSuggestions.mm @nonARC
 Tests/WebKit/WKWebView/YoutubeReplacementPlugin.mm @nonARC
+Tests/WebKit/WKWebView/_WKAutomationSessionLocal.mm @nonARC
 Tests/WebKit/WKWebView/_WKInputDelegate.mm @nonARC
 Tests/WebKit/WKWebView/_WKWebAuthenticationPanel.mm @nonARC
 Tests/WebKit/WKWebView/iOSMouseSupport.mm @nonARC

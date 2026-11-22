@@ -33,6 +33,7 @@
 #import <WebKit/WKFoundation.h>
 #import <WebKit/WKPreferencesPrivate.h>
 #import <WebKit/WKWebViewConfigurationPrivate.h>
+#import <WebKit/_WKFeature.h>
 #import <wtf/ObjCRuntimeExtras.h>
 
 @interface WKPreferencesMessageHandler : NSObject <WKScriptMessageHandler>
@@ -356,4 +357,21 @@ TEST(WKPreferences, CopyKeepsSiteIsolationEnabled)
     [preferences _setSiteIsolationEnabled:defaultValue];
     copy = adoptNS([preferences copy]);
     EXPECT_EQ([copy _siteIsolationEnabled], defaultValue);
+}
+
+TEST(WKPreferences, TrackerlessDefaults)
+{
+    RetainPtr preferences = adoptNS([WKPreferences new]);
+    EXPECT_FALSE([preferences isFraudulentWebsiteWarningEnabled]);
+    EXPECT_FALSE([preferences _privateClickMeasurementEnabled]);
+
+    bool foundPrefetchFeature = false;
+    for (_WKFeature *feature in [WKPreferences _features]) {
+        if (![feature.key isEqualToString:@"SpeculationRulesPrefetchEnabled"])
+            continue;
+        foundPrefetchFeature = true;
+        EXPECT_FALSE(feature.defaultValue);
+        EXPECT_FALSE([preferences _isEnabledForFeature:feature]);
+    }
+    EXPECT_TRUE(foundPrefetchFeature);
 }

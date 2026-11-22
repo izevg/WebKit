@@ -141,6 +141,14 @@ void WebAuthenticatorCoordinatorProxy::handleRequest(WebAuthenticationRequestDat
     if (!data.frameInfo)
         return handler({ }, AuthenticatorAttachment::Platform, ExceptionData { ExceptionCode::InvalidStateError });
 
+#if ENABLE(WEB_AUTHN_OWN_MANAGER)
+    if (data.mediation == MediationRequirement::Conditional) {
+        Ref authenticatorManager = m_webPageProxy->websiteDataStore().authenticatorManager();
+        if (!authenticatorManager->isMock() && !authenticatorManager->isVirtual())
+            return handler({ }, AuthenticatorAttachment::Platform, ExceptionData { ExceptionCode::NotSupportedError, "Conditional mediation is not supported."_s });
+    }
+#endif
+
     auto origin = API::SecurityOrigin::create(data.callerOrigin());
 
     bool shouldRequestConditionalRegistration = std::holds_alternative<PublicKeyCredentialCreationOptions>(data.options) && data.mediation == MediationRequirement::Conditional;
@@ -164,13 +172,14 @@ void WebAuthenticatorCoordinatorProxy::handleRequest(WebAuthenticationRequestDat
         if (result) {
 #if HAVE(UNIFIED_ASC_AUTH_UI) || HAVE(WEB_AUTHN_AS_MODERN)
             if (!authenticatorManager->isMock() && !authenticatorManager->isVirtual()) {
+#if !ENABLE(WEB_AUTHN_OWN_MANAGER)
                 if (!protectedThis->isASCAvailable()) {
                     handler({ }, AuthenticatorAttachment::Platform, ExceptionData { ExceptionCode::NotSupportedError, "Not implemented."_s });
                     RELEASE_LOG_ERROR(WebAuthn, "Web Authentication is not currently supported in this environment.");
                     return;
                 }
-                // performRequest calls out to ASCAgent which will then call [_WKWebAuthenticationPanel makeCredential/getAssertionWithChallenge]
-                // which calls authenticatorManager->handleRequest(..)
+#endif
+                // Validate the relying party and origins before dispatching a production request.
                 protectedThis->performRequest(WTF::move(data), WTF::move(handler));
                 return;
             }
@@ -182,27 +191,7 @@ void WebAuthenticatorCoordinatorProxy::handleRequest(WebAuthenticationRequestDat
             }
 #endif // not HAVE(UNIFIED_ASC_AUTH_UI) || HAVE(WEB_AUTHN_AS_MODERN)
 
-            RefPtr<ArrayBuffer> clientDataJSON;
-            // AS API makes no difference between SameSite vs CrossOrigin
-            WebAuthn::Scope scope = data.parentOrigin ? WebAuthn::Scope::CrossOrigin : WebAuthn::Scope::SameOrigin;
-            auto topOrigin = data.parentOrigin ? data.parentOrigin->toString() : nullString();
-            WTF::switchOn(data.options, [&](const PublicKeyCredentialCreationOptions& options) {
-                clientDataJSON = buildClientDataJson(ClientDataType::Create, options.challenge, data.callerOrigin().securityOrigin(), scope, topOrigin);
-            }, [&](const PublicKeyCredentialRequestOptions& options) {
-                clientDataJSON = buildClientDataJson(ClientDataType::Get, options.challenge, data.callerOrigin().securityOrigin(), scope, topOrigin);
-            });
-            data.hash = buildClientDataJsonHash(*clientDataJSON);
-
-            authenticatorManager->handleRequest(WTF::move(data), [handler = WTF::move(handler), clientDataJSON = WTF::move(clientDataJSON)] (Variant<Ref<AuthenticatorResponse>, ExceptionData>&& result) mutable {
-                ASSERT(RunLoop::isMain());
-                WTF::switchOn(result, [&](const Ref<AuthenticatorResponse>& response) {
-                    auto responseData = response->data();
-                    responseData.clientDataJSON = WTF::move(clientDataJSON);
-                    handler(responseData, response->attachment(), { });
-                }, [&](const ExceptionData& exception) {
-                    handler({ }, (AuthenticatorAttachment)0, exception);
-                });
-            });
+            protectedThis->handleRequestWithAuthenticatorManager(WTF::move(data), WTF::move(handler));
         } else {
             handler({ }, (AuthenticatorAttachment)0, ExceptionData { ExceptionCode::NotAllowedError, "This request has been cancelled by the user."_s });
             RELEASE_LOG_ERROR(WebAuthn, "Request cancelled due to rejected prompt after lack of user gesture.");
@@ -250,6 +239,34 @@ void WebAuthenticatorCoordinatorProxy::handleRequest(WebAuthenticationRequestDat
     afterConsent(true);
 }
 
+void WebAuthenticatorCoordinatorProxy::handleRequestWithAuthenticatorManager(WebAuthenticationRequestData&& data, RequestCompletionHandler&& handler)
+{
+    RefPtr webPageProxy = m_webPageProxy;
+    if (!webPageProxy)
+        return handler({ }, AuthenticatorAttachment::Platform, ExceptionData { ExceptionCode::InvalidStateError });
+
+    RefPtr<ArrayBuffer> clientDataJSON;
+    WebAuthn::Scope scope = data.parentOrigin ? WebAuthn::Scope::CrossOrigin : WebAuthn::Scope::SameOrigin;
+    auto topOrigin = data.parentOrigin ? data.parentOrigin->toString() : nullString();
+    WTF::switchOn(data.options, [&](const PublicKeyCredentialCreationOptions& options) {
+        clientDataJSON = buildClientDataJson(ClientDataType::Create, options.challenge, data.callerOrigin().securityOrigin(), scope, topOrigin);
+    }, [&](const PublicKeyCredentialRequestOptions& options) {
+        clientDataJSON = buildClientDataJson(ClientDataType::Get, options.challenge, data.callerOrigin().securityOrigin(), scope, topOrigin);
+    });
+    data.hash = buildClientDataJsonHash(*clientDataJSON);
+
+    Ref authenticatorManager = webPageProxy->websiteDataStore().authenticatorManager();
+    authenticatorManager->handleRequest(WTF::move(data), [handler = WTF::move(handler), clientDataJSON = WTF::move(clientDataJSON)](Variant<Ref<AuthenticatorResponse>, ExceptionData>&& result) mutable {
+        ASSERT(RunLoop::isMain());
+        WTF::switchOn(result, [&](const Ref<AuthenticatorResponse>& response) {
+            auto responseData = response->data();
+            responseData.clientDataJSON = WTF::move(clientDataJSON);
+            handler(responseData, response->attachment(), { });
+        }, [&](const ExceptionData& exception) {
+            handler({ }, (AuthenticatorAttachment)0, exception);
+        });
+    });
+}
 
 #if !HAVE(UNIFIED_ASC_AUTH_UI) && !HAVE(WEB_AUTHN_AS_MODERN)
 void WebAuthenticatorCoordinatorProxy::cancel(CompletionHandler<void()>&& completionHandler)

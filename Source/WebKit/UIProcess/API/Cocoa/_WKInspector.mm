@@ -194,6 +194,26 @@ private:
     protect(*_inspector)->attach();
 }
 
+- (void)showTab:(NSString *)tabIdentifier
+{
+    protect(*_inspector)->showTab(tabIdentifier);
+}
+
+- (void)attachToSide:(_WKInspectorAttachmentSide)side
+{
+    switch (side) {
+    case _WKInspectorAttachmentSideBottom:
+        protect(*_inspector)->attachBottom();
+        return;
+    case _WKInspectorAttachmentSideRight:
+        protect(*_inspector)->attachRight();
+        return;
+    case _WKInspectorAttachmentSideLeft:
+        protect(*_inspector)->attachLeft();
+        return;
+    }
+}
+
 - (void)detach
 {
     protect(*_inspector)->detach();

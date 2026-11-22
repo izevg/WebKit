@@ -74,6 +74,9 @@
 #include <wtf/FileSystem.h>
 #include <wtf/HashMap.h>
 #include <wtf/MainThread.h>
+#include <wtf/Noncopyable.h>
+#include <wtf/RefCounted.h>
+#include <wtf/TZoneMallocInlines.h>
 #include <wtf/URL.h>
 #include <wtf/UUID.h>
 #include <wtf/text/MakeString.h>
@@ -137,6 +140,66 @@ static constexpr Seconds closeBrowsingContextTimeout = 5_s;
 static const Inspector::Protocol::Automation::PageLoadStrategy defaultPageLoadStrategy = Inspector::Protocol::Automation::PageLoadStrategy::Normal;
 
 #if ENABLE(REMOTE_INSPECTOR)
+// FrontendChannel for an in-process automation client (see connectLocalClient()).
+// Delivery is asynchronous on the main run loop so the client may dispatch,
+// disconnect or terminate from inside its handler without re-entering
+// FrontendRouter while it iterates its connections. The handler lives in a
+// ref-counted box that every queued delivery keeps alive, so destroying the
+// channel from inside the handler is safe; deliveries still queued at that
+// point are dropped.
+class LocalAutomationClientChannel final : public Inspector::FrontendChannel {
+    WTF_MAKE_TZONE_ALLOCATED_INLINE(LocalAutomationClientChannel);
+    WTF_MAKE_NONCOPYABLE(LocalAutomationClientChannel);
+public:
+    explicit LocalAutomationClientChannel(Function<void(const String&)>&& messageHandler)
+        : m_client(Client::create(WTF::move(messageHandler)))
+    {
+    }
+
+    ~LocalAutomationClientChannel() final
+    {
+        m_client->disconnect();
+    }
+
+    ConnectionType connectionType() const final { return ConnectionType::Local; }
+
+    void sendMessageToFrontend(const String& message) final
+    {
+        RunLoop::mainSingleton().dispatch([client = m_client.copyRef(), message = String { message }] {
+            client->deliver(message);
+        });
+    }
+
+private:
+    class Client : public RefCounted<Client> {
+        WTF_MAKE_TZONE_ALLOCATED_INLINE(Client);
+    public:
+        static Ref<Client> create(Function<void(const String&)>&& messageHandler)
+        {
+            return adoptRef(*new Client(WTF::move(messageHandler)));
+        }
+
+        void deliver(const String& message) const
+        {
+            if (m_isConnected)
+                m_messageHandler(message);
+        }
+
+        void disconnect() { m_isConnected = false; }
+
+    private:
+        explicit Client(Function<void(const String&)>&& messageHandler)
+            : m_messageHandler(WTF::move(messageHandler))
+        {
+        }
+
+        Function<void(const String&)> m_messageHandler;
+        bool m_isConnected { true };
+    };
+
+    const Ref<Client> m_client;
+};
+
 auto WebAutomationSession::Debuggable::create(WebAutomationSession& session) -> Ref<Debuggable>
 {
     return adoptRef(*new Debuggable(session));
@@ -211,6 +274,14 @@ WebAutomationSession::~WebAutomationSession()
 {
 #if ENABLE(REMOTE_INSPECTOR)
     disconnectAllInspectorPassthroughChannels();
+
+    // Command callbacks still in flight keep the frontend router alive; make
+    // sure none of them can reach the local channel once it is gone.
+    if (auto localClientChannel = std::exchange(m_localClientChannel, nullptr)) {
+        ASSERT(m_remoteChannel == localClientChannel.get());
+        m_remoteChannel = nullptr;
+        m_frontendRouter->disconnectFrontend(*localClientChannel);
+    }
 #endif
     ASSERT(!m_client);
     ASSERT(!m_processPool);
@@ -240,9 +311,6 @@ WebProcessPool* WebAutomationSession::processPool() const
     return m_processPool.get();
 }
 
-// NOTE: this class could be split at some point to support local and remote automation sessions.
-// For now, it only works with a remote automation driver over a RemoteInspector connection.
-
 #if ENABLE(REMOTE_INSPECTOR)
 
 void WebAutomationSession::dispatchMessageFromRemote(String&& message)
@@ -269,7 +337,47 @@ void WebAutomationSession::disconnect(Inspector::FrontendChannel& channel)
 
 void WebAutomationSession::init()
 {
+    // A session driven by an in-process client is never advertised to RemoteInspector.
+    if (m_isLocalSession)
+        return;
+
     m_debuggable->init();
+}
+
+bool WebAutomationSession::connectLocalClient(Function<void(const String&)>&& messageHandler)
+{
+    assertIsMainRunLoop();
+
+    if (!messageHandler || m_localClientChannel || m_remoteChannel || m_debuggable->targetIdentifier())
+        return false;
+
+    m_isLocalSession = true;
+    m_localClientChannel = makeUnique<LocalAutomationClientChannel>(WTF::move(messageHandler));
+    connect(*m_localClientChannel);
+    return true;
+}
+
+void WebAutomationSession::disconnectLocalClient()
+{
+    assertIsMainRunLoop();
+
+    if (!m_localClientChannel)
+        return;
+
+    // Same path as a remote driver hanging up: terminate() tears down the
+    // frontend connection, the passthrough channels and the local channel.
+    disconnect(*m_localClientChannel);
+}
+
+bool WebAutomationSession::dispatchMessageFromLocalClient(String&& message)
+{
+    assertIsMainRunLoop();
+
+    if (!m_localClientChannel || !m_processPool)
+        return false;
+
+    dispatchMessageFromRemote(WTF::move(message));
+    return true;
 }
 
 bool WebAutomationSession::isPaired() const
@@ -289,7 +397,7 @@ CommandResult<void> WebAutomationSession::sendInspectorMessage(const Inspector::
 {
     assertIsMainRunLoop();
 
-    SYNC_FAIL_WITH_PREDEFINED_ERROR_IF(!m_client || !m_client->shouldEnableInspectorTesting(*this), NotImplemented);
+    SYNC_FAIL_WITH_PREDEFINED_ERROR_IF(!m_inspectorPassthroughEnabled && (!m_client || !m_client->shouldEnableInspectorTesting(*this)), NotImplemented);
 
     RefPtr page = webPageProxyForHandle(browsingContextHandle);
     SYNC_FAIL_WITH_PREDEFINED_ERROR_IF(!page, WindowNotFound);
@@ -355,6 +463,9 @@ void WebAutomationSession::terminate()
     m_debuggable->setIsPaired(false);
 
     disconnectAllInspectorPassthroughChannels();
+
+    // Already disconnected from the router above; drops queued deliveries.
+    m_localClientChannel = nullptr;
 #endif
 
     if (m_client)

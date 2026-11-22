@@ -124,6 +124,7 @@ private:
     void cancel(CompletionHandler<void()>&&);
 
     void handleRequest(WebAuthenticationRequestData&&, RequestCompletionHandler&&);
+    void handleRequestWithAuthenticatorManager(WebAuthenticationRequestData&&, RequestCompletionHandler&&);
 
     WeakPtr<WebPageProxy> m_webPageProxy;
 

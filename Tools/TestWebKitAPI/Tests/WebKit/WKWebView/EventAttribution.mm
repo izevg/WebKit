@@ -667,6 +667,7 @@ static HTTPServer setupSKAdNetworkTest(Vector<String>& consoleMessages, id<WKNav
             break;
         }
     }
+    [[viewConfiguration preferences] _setPrivateClickMeasurementEnabled:YES];
 
     [viewConfiguration.get().websiteDataStore _setPrivateClickMeasurementDebugModeEnabled:YES];
 

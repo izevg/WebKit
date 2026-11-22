@@ -77,7 +77,7 @@ public:
 #endif
     std::optional<bool> overrideShouldReportViewportSizeAsScreenSize;
     std::optional<bool> overrideShouldReportDesktopClassPointingDevice;
-    std::optional<bool> globalPrivacyControlEnabled;
+    std::optional<bool> globalPrivacyControlEnabled { true };
     WebsiteAutoplayPolicy autoplayPolicy { WebsiteAutoplayPolicy::Default };
     WebsitePopUpPolicy popUpPolicy { WebsitePopUpPolicy::Default };
     WebsiteMetaViewportPolicy metaViewportPolicy { WebsiteMetaViewportPolicy::Default };
