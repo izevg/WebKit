@@ -274,8 +274,7 @@ WI.OverviewTimelineView = class OverviewTimelineView extends WI.TimelineView
 
     _addResourceToDataGridIfNeeded(resource)
     {
-        console.assert(resource);
-        if (!resource)
+        if (!(resource instanceof WI.Resource))
             return null;
 
         // FIXME: replace with this._dataGrid.findDataGridNode(resource) once <https://webkit.org/b/155305> is fixed.
@@ -335,7 +334,10 @@ WI.OverviewTimelineView = class OverviewTimelineView extends WI.TimelineView
         }
 
         if (!dataGridNode.parent) {
-            let parentDataGridNode = sourceCodeTimeline.sourceCodeLocation ? this._addResourceToDataGridIfNeeded(sourceCodeTimeline.sourceCode) : null;
+            // A dynamic script has a source location without a corresponding network resource.
+            let sourceCode = sourceCodeTimeline.sourceCode;
+            let resource = sourceCode instanceof WI.Script ? sourceCode.resource : sourceCode;
+            let parentDataGridNode = sourceCodeTimeline.sourceCodeLocation ? this._addResourceToDataGridIfNeeded(resource) : null;
             this._insertDataGridNode(dataGridNode, parentDataGridNode);
         }
     }
