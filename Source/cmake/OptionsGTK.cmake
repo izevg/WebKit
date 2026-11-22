@@ -3,6 +3,8 @@ include(VersioningUtils)
 
 WEBKIT_OPTION_BEGIN()
 
+WEBKIT_OPTION_DEFINE(ENABLE_QUICKIE_RELOCATABLE_GTK "Load Quickie's GTK runtime from its installation prefix" PRIVATE OFF)
+
 SET_PROJECT_VERSION(2 55 0)
 
 set(USER_AGENT_BRANDING "" CACHE STRING "Branding to add to user agent string")
@@ -167,6 +169,12 @@ WEBKIT_OPTION_DEPEND(ENABLE_WEBXR ENABLE_GAMEPAD)
 # Finalize the value for all options. Do not attempt to use an option before
 # this point, and do not attempt to change any option after this point.
 WEBKIT_OPTION_END()
+
+if (ENABLE_QUICKIE_RELOCATABLE_GTK)
+    if (NOT CMAKE_INSTALL_BINDIR STREQUAL "bin" OR NOT CMAKE_INSTALL_LIBDIR STREQUAL "lib" OR NOT CMAKE_INSTALL_LIBEXECDIR STREQUAL "libexec")
+        message(FATAL_ERROR "Quickie's relocatable GTK build requires bin, lib and libexec under its prefix")
+    endif ()
+endif ()
 
 if (USE_GTK4)
     set(GTK_MINIMUM_VERSION 4.6.0)

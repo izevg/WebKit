@@ -32,7 +32,7 @@
 
 namespace WebKit {
 
-#if ENABLE(DEVELOPER_MODE)
+#if ENABLE(DEVELOPER_MODE) || (PLATFORM(GTK) && ENABLE(QUICKIE_RELOCATABLE_GTK))
 static String getExecutablePath()
 {
     auto executablePath = FileSystem::currentExecutablePath();
@@ -42,8 +42,27 @@ static String getExecutablePath()
 }
 #endif
 
+#if PLATFORM(GTK) && ENABLE(QUICKIE_RELOCATABLE_GTK)
+String quickieInstallationPrefix()
+{
+    auto binaryDirectory = getExecutablePath();
+    if (FileSystem::lastComponentOfPathIgnoringTrailingSlash(binaryDirectory) != "bin"_s)
+        return { };
+    return FileSystem::parentPath(binaryDirectory);
+}
+#endif
+
 static String findWebKitProcess(const ASCIILiteral processName)
 {
+#if PLATFORM(GTK) && ENABLE(QUICKIE_RELOCATABLE_GTK)
+    static const String installationPrefix = quickieInstallationPrefix();
+    if (!installationPrefix.isEmpty()) {
+        auto libexec = FileSystem::pathByAppendingComponent(installationPrefix, "libexec"_s);
+        auto directoryName = FileSystem::lastComponentOfPathIgnoringTrailingSlash(FileSystem::stringFromFileSystemRepresentation(PKGLIBEXECDIR));
+        auto processDirectory = FileSystem::pathByAppendingComponent(libexec, directoryName);
+        return FileSystem::pathByAppendingComponent(processDirectory, processName);
+    }
+#endif
 #if ENABLE(DEVELOPER_MODE)
     static const char* execDirectory = g_getenv("WEBKIT_EXEC_PATH");
     if (execDirectory) {

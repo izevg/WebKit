@@ -27,6 +27,7 @@
 #include "FrameInfoData.h"
 #include "LegacyGlobalSettings.h"
 #include "NetworkProcessMessages.h"
+#include "ProcessExecutablePath.h"
 #include "TextChecker.h"
 #include "TextCheckerState.h"
 #include "WebAutomationSession.h"
@@ -345,6 +346,14 @@ void webkitWebContextWillCloseAutomationSession(WebKitWebContext* webContext)
 
 static UTF8CString injectedBundleDirectory()
 {
+#if PLATFORM(GTK) && ENABLE(QUICKIE_RELOCATABLE_GTK)
+    if (auto prefix = quickieInstallationPrefix(); !prefix.isEmpty()) {
+        auto lib = FileSystem::pathByAppendingComponent(prefix, "lib"_s);
+        auto directoryName = FileSystem::lastComponentOfPathIgnoringTrailingSlash(FileSystem::stringFromFileSystemRepresentation(PKGLIBDIR));
+        auto webKit = FileSystem::pathByAppendingComponent(lib, directoryName);
+        return FileSystem::fileSystemRepresentation(FileSystem::pathByAppendingComponent(webKit, "injected-bundle"_s));
+    }
+#endif
     const char* bundleDirectory = g_getenv("WEBKIT_INJECTED_BUNDLE_PATH");
     if (bundleDirectory && g_file_test(bundleDirectory, G_FILE_TEST_IS_DIR))
         return UTF8CString::unsafeFromUTF8(bundleDirectory);

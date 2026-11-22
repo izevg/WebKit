@@ -29,6 +29,10 @@
 
 namespace WebKit {
 
+#if PLATFORM(GTK) && ENABLE(QUICKIE_RELOCATABLE_GTK)
+String quickieInstallationPrefix();
+#endif
+
 String executablePathOfWebProcess();
 String executablePathOfNetworkProcess();
 #if ENABLE(GPU_PROCESS)
