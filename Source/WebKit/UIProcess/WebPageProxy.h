@@ -129,6 +129,7 @@ class Decoder;
 class FormDataReference;
 class SharedBufferReference;
 class Timeout;
+enum class MessageName : uint16_t;
 enum class SendOption : uint8_t;
 enum class SendSyncOption : uint8_t;
 template<typename> class ConnectionSendSyncResult;

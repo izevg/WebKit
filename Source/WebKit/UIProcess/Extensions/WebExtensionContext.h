@@ -177,6 +177,7 @@ struct WebExtensionCookieParameters;
 struct WebExtensionCookieStoreParameters;
 struct WebExtensionMenuItemContextParameters;
 struct WebExtensionMessageTargetParameters;
+struct WebExtensionOffscreenDocumentParameters;
 
 #if ENABLE(DNR_ON_RULE_MATCHED_DEBUG)
 struct ContentRuleListMatchedRule;
