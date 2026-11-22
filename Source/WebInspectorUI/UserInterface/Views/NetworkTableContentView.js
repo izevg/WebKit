@@ -44,6 +44,7 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         this._table = null;
         this._hoveredRowIndex = null;
         this._usesCompactLayout = WI.Platform.name === "mac";
+        this._usesQuickieLayout = document.body.classList.contains("quickie-local-inspector");
         this._nameColumnWidthSetting = new WI.Setting("network-table-content-view-name-column-width", this._usesCompactLayout ? 200 : WI.Sidebar.AbsoluteMinimumWidth);
 
         this._selectedObject = null;
@@ -64,8 +65,9 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         this._statistics = {};
 
         this.element.classList.add("network-table");
+        this.element.classList.toggle("quickie-network", this._usesQuickieLayout);
 
-        this._typeFilterScopeBarItemAll = new WI.ScopeBarItem("network-type-filter-all", WI.UIString("All"));
+        this._typeFilterScopeBarItemAll = new WI.ScopeBarItem("network-type-filter-all", WI.UIString("All"), {exclusive: this._usesQuickieLayout});
         let typeFilterScopeBarItems = [this._typeFilterScopeBarItemAll];
 
         function addScopeBarItem(id, label, checker) {
@@ -89,7 +91,17 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
                 && type !== WI.Resource.Type.Fetch;
         });
 
-        const shouldGroupNonExclusiveItems = true;
+        if (this._usesQuickieLayout) {
+            let order = ["all", "xhr-fetch", "script", "styleSheet", "image", "document", "font", "other"];
+            let prefix = "network-type-filter-";
+            typeFilterScopeBarItems.sort((a, b) => order.indexOf(a.id.substring(prefix.length)) - order.indexOf(b.id.substring(prefix.length)));
+            this._additionalTypeFilters = typeFilterScopeBarItems.slice(5);
+            for (let item of typeFilterScopeBarItems)
+                item.element.setAttribute("role", "button");
+            for (let item of this._additionalTypeFilters)
+                item.hidden = true;
+        }
+        const shouldGroupNonExclusiveItems = !this._usesQuickieLayout;
         this._typeFilterScopeBar = new WI.ScopeBar("network-type-filter-scope-bar", typeFilterScopeBarItems, typeFilterScopeBarItems[0], shouldGroupNonExclusiveItems);
         this._typeFilterScopeBar.visibilityPriority = WI.NavigationItem.VisibilityPriority.High;
         this._typeFilterScopeBar.addEventListener(WI.ScopeBar.Event.SelectionChanged, this._typeFilterScopeBarSelectionChanged, this);
@@ -100,6 +112,20 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         WI.addMouseDownContextMenuHandlers(this._otherFiltersNavigationItem.element, this._handleOtherFiltersNavigationItemContextMenu.bind(this));
         this._updateOtherFiltersNavigationItemState();
         this._otherFiltersNavigationItem.element.appendChild(WI.ImageUtilities.useSVGSymbol("Images/Filter.svg", "glyph"));
+        if (this._usesQuickieLayout) {
+            let more = this._otherFiltersNavigationItem.element;
+            more.tabIndex = 0;
+            more.setAttribute("role", "button");
+            more.setAttribute("aria-haspopup", "menu");
+            more.setAttribute("aria-label", WI.unlocalizedString("More Network options"));
+            more.addEventListener("keydown", (event) => {
+                if (event.key !== "Enter" && event.key !== " ")
+                    return;
+                let bounds = more.getBoundingClientRect();
+                more.dispatchEvent(new MouseEvent("mousedown", {button: 0, bubbles: true, cancelable: true, clientX: bounds.left, clientY: bounds.bottom}));
+                event.preventDefault();
+            });
+        }
 
         this._urlFilterSearchText = null;
         this._urlFilterSearchRegex = null;
@@ -109,6 +135,8 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         this._urlFilterNavigationItem.visibilityPriority = WI.NavigationItem.VisibilityPriority.High;
         this._urlFilterNavigationItem.filterBar.addEventListener(WI.FilterBar.Event.FilterDidChange, this._urlFilterDidChange, this);
         this._urlFilterNavigationItem.filterBar.placeholder = WI.UIString("Filter Full URL");
+        if (this._usesQuickieLayout)
+            this._urlFilterNavigationItem.filterBar.placeholder = WI.unlocalizedString("Filter requests");
 
         this._activeTypeFilters = this._generateTypeFilter();
         this._activeURLFilterResources = new Set;
@@ -168,6 +196,14 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         this._clearNetworkItemsNavigationItem.addEventListener(WI.ButtonNavigationItem.Event.Clicked, function(event) {
             this.reset();
         }, this);
+        if (this._usesQuickieLayout) {
+            this._clearNetworkItemsNavigationItem.label = WI.unlocalizedString("Clear");
+            this._clearNetworkItemsNavigationItem.buttonStyle = WI.ButtonNavigationItem.Style.ImageAndText;
+            this._preserveNetworkNavigationItem = new WI.CheckboxNavigationItem("network-preserve-requests", WI.unlocalizedString("Preserve"), !WI.settings.clearNetworkOnNavigate.value);
+            this._preserveNetworkNavigationItem.addEventListener(WI.CheckboxNavigationItem.Event.CheckedDidChange, () => {
+                WI.settings.clearNetworkOnNavigate.value = !this._preserveNetworkNavigationItem.checked;
+            });
+        }
 
         WI.Target.addEventListener(WI.Target.Event.ResourceAdded, this._handleResourceAdded, this);
         WI.Frame.addEventListener(WI.Frame.Event.MainResourceDidChange, this._mainResourceDidChange, this);
@@ -262,6 +298,8 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
 
     get navigationItems()
     {
+        if (this._usesQuickieLayout)
+            return [this._pathComponentsNavigationItemGroup, this._clearNetworkItemsNavigationItem, this._preserveNetworkNavigationItem];
         let items = [];
         if (this._disableResourceCacheNavigationItem)
             items.push(this._disableResourceCacheNavigationItem);
@@ -815,6 +853,13 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
             redirectCountElement.className = "redirect-count";
             let redirectCount = resource.redirects.length;
             redirectCountElement.textContent = redirectCount === 1 ? WI.UIString("%d redirect").format(redirectCount) : WI.UIString("%d redirects").format(redirectCount);
+        }
+
+        if (this._usesQuickieLayout && entry.domain && entry.domain !== entry.name) {
+            nameElement.classList.add("request-name");
+            let originElement = cell.appendChild(document.createElement("span"));
+            originElement.className = "request-origin";
+            originElement.textContent = entry.domain;
         }
 
         cell.title = resource.url;
@@ -1393,8 +1438,8 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         });
 
         this._statusColumn = new WI.TableColumn("status", WI.UIString("Status"), {
-            minWidth: 50,
-            maxWidth: 50,
+            minWidth: this._usesQuickieLayout ? 64 : 50,
+            maxWidth: this._usesQuickieLayout ? 68 : 50,
             align: this._usesCompactLayout ? "right" : "left",
         });
 
@@ -1440,10 +1485,10 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
             align: "right",
         });
 
-        this._transferSizeColumn = new WI.TableColumn("transferSize", WI.UIString("Transfer Size", "Amount of data sent over the network for a single resource"), {
-            minWidth: 50,
+        this._transferSizeColumn = new WI.TableColumn("transferSize", this._usesQuickieLayout ? WI.unlocalizedString("Size") : WI.UIString("Transfer Size", "Amount of data sent over the network for a single resource"), {
+            minWidth: this._usesQuickieLayout ? 64 : 50,
             maxWidth: 150,
-            initialWidth: 50,
+            initialWidth: this._usesQuickieLayout ? 72 : 50,
             align: "right",
         });
 
@@ -1463,7 +1508,8 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         this._nameColumn.addEventListener(WI.TableColumn.Event.WidthDidChange, this._tableNameColumnDidChangeWidth, this);
         this._waterfallColumn.addEventListener(WI.TableColumn.Event.WidthDidChange, this._tableWaterfallColumnDidChangeWidth, this);
 
-        this._table = new WI.Table("network-table", this, this, this._usesCompactLayout ? 24 : 20);
+        let rowHeight = this._usesQuickieLayout ? 32 : (this._usesCompactLayout ? 24 : 20);
+        this._table = new WI.Table("network-table", this, this, rowHeight);
 
         this._table.addColumn(this._nameColumn);
         this._table.addColumn(this._domainColumn);
@@ -1540,6 +1586,9 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
             return;
 
         let width = this.element.clientWidth;
+        if (this._usesQuickieLayout && width)
+            this._updateResponsiveColumns(width);
+
         if (width >= 700)
             this._preferredDetailLayout = "side";
         else
@@ -1547,6 +1596,20 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
 
         this._updateNameColumnWidth(width);
         this._updateDetailLayout();
+    }
+
+    _updateResponsiveColumns(width)
+    {
+        if (width < 420 && !this._narrowHiddenColumns) {
+            let optionalColumns = [this._transferSizeColumn, this._timeColumn, this._waterfallColumn];
+            this._narrowHiddenColumns = optionalColumns.filter((column) => !column.hidden);
+            for (let column of this._narrowHiddenColumns)
+                this._table.hideColumn(column, {persist: false});
+        } else if (width >= 420 && this._narrowHiddenColumns) {
+            for (let column of this._narrowHiddenColumns)
+                this._table.showColumn(column, {persist: false});
+            this._narrowHiddenColumns = null;
+        }
     }
 
     didLayoutSubtree()
@@ -1843,6 +1906,8 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
 
         this.element.classList.remove("showing-detail");
         this._table.scrollContainer.style.removeProperty("width");
+        if (this._usesQuickieLayout)
+            this._table.element.style.removeProperty("width");
 
         this.removeSubview(this._detailView);
         this._detailView = null;
@@ -1931,9 +1996,17 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
             return;
 
         let side = WI.resolvedLayoutDirection() === WI.LayoutDirection.RTL ? "right" : "left";
-        let width = this._detailLayout === "side" ? this._nameColumn.width + "px" : "";
+        let width = "";
+        if (this._detailLayout === "side") {
+            let availableWidth = this.element.clientWidth;
+            let requestListWidth = this._usesQuickieLayout ? Math.min(Math.max(400, Math.round(availableWidth * 0.43)), availableWidth - 300) : this._nameColumn.width;
+            width = requestListWidth + "px";
+        }
         this._detailView.element.style[side] = width;
-        this._table.scrollContainer.style.width = width;
+        if (this._usesQuickieLayout)
+            this._table.element.style.width = width;
+        else
+            this._table.scrollContainer.style.width = width;
     }
 
     _createCompactDetailControls()
@@ -2098,6 +2171,8 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
 
     _handleClearNetworkOnNavigateChanged(event)
     {
+        if (this._preserveNetworkNavigationItem)
+            this._preserveNetworkNavigationItem.checked = !WI.settings.clearNetworkOnNavigate.value;
         this._updateOtherFiltersNavigationItemState();
     }
 
@@ -2913,6 +2988,12 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
 
     _typeFilterScopeBarSelectionChanged(event)
     {
+        if (this._usesQuickieLayout) {
+            let visibleFilterSelected = this._typeFilterScopeBar.selectedItems.some((item) => !item.hidden);
+            this._typeFilterScopeBarItemAll.element.tabIndex = visibleFilterSelected && !this._typeFilterScopeBarItemAll.selected ? -1 : 0;
+            this._otherFiltersNavigationItem.element.classList.toggle("active-request-type", this._typeFilterScopeBar.selectedItems.some((item) => item.hidden));
+        }
+
         // FIXME: <https://webkit.org/b/176763> Web Inspector: ScopeBar SelectionChanged event may dispatch multiple times for a single logical change
         // We can't use shallow equals here because the contents are functions.
         let oldFilter = this._activeTypeFilters;
@@ -2930,6 +3011,20 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
 
     _handleOtherFiltersNavigationItemContextMenu(contextMenu)
     {
+        if (this._usesQuickieLayout) {
+            let types = contextMenu.appendSubMenuItem(WI.unlocalizedString("More request types"));
+            for (let item of this._additionalTypeFilters)
+                types.appendCheckboxItem(item.label, () => item.toggle(!item.selected, {extendSelection: true}), item.selected);
+            contextMenu.appendCheckboxItem(WI.UIString("Disable Caches"), () => this._toggleDisableResourceCache(), WI.settings.resourceCachingDisabled.value);
+            if (this._networkConditionScopeBar) {
+                let conditions = contextMenu.appendSubMenuItem(WI.unlocalizedString("Network throttling"));
+                for (let item of this._networkConditionScopeBar.items)
+                    conditions.appendCheckboxItem(item.label, () => { item.selected = true; }, item.selected);
+            }
+            contextMenu.appendItem(WI.unlocalizedString("Import HAR"), () => this._importHAR());
+            contextMenu.appendItem(WI.unlocalizedString("Export HAR"), () => this._exportHAR(), !this._canExportHAR());
+            contextMenu.appendSeparator();
+        }
         contextMenu.appendCheckboxItem(WI.UIString("Preserve Requests", "Preserve Requests @ Network Tab", "Label for option that controls whether captured network requests are cleared when the page navigates."), () => {
             WI.settings.clearNetworkOnNavigate.value = !WI.settings.clearNetworkOnNavigate.value;
         }, !WI.settings.clearNetworkOnNavigate.value);

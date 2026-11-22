@@ -1,0 +1,186 @@
+/*
+ * Copyright (C) 2026 Quickie contributors
+ * SPDX-License-Identifier: BSD-2-Clause
+ */
+
+body.quickie-local-inspector .network-detail.resource {
+    display: flex;
+    flex-direction: column;
+    background: var(--quickie-output-background);
+}
+
+body.quickie-local-inspector .network-detail.resource > .content-browser {
+    position: relative;
+    inset: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+body.quickie-local-inspector .network-detail.resource > .request-summary {
+    flex: none;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--separator-color);
+    font: var(--quickie-mono-small);
+    -webkit-user-select: text;
+}
+
+body.quickie-local-inspector .request-summary > :is(.request-summary-identity, .request-summary-metrics) {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+body.quickie-local-inspector .request-summary-method {
+    flex: none;
+    padding: 2px 4px;
+    border-radius: 4px;
+    background: var(--quickie-selection-fill);
+    font-weight: 600;
+}
+
+body.quickie-local-inspector .request-summary-url {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+body.quickie-local-inspector .request-summary > .request-summary-metrics {
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    color: var(--text-color-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+body.quickie-local-inspector .request-summary > .request-summary-metrics:not(:has(> :not([hidden]))) {
+    display: none;
+}
+
+body.quickie-local-inspector .request-summary > .request-summary-metrics:has(> :not([hidden])) {
+    margin-top: 4px;
+}
+
+body.quickie-local-inspector .network-detail.resource > .content-browser > .navigation-bar {
+    justify-content: start;
+    flex-wrap: nowrap;
+    height: 32px;
+    padding-inline: 8px;
+    overflow: auto hidden;
+    scrollbar-width: none;
+    border-color: var(--separator-color);
+    background: var(--quickie-chrome-background);
+}
+
+body.quickie-local-inspector .network-detail.resource > .content-browser > .navigation-bar > .item {
+    flex-shrink: 0;
+}
+
+body.quickie-local-inspector .network .network-detail.resource .navigation-bar > .item.radio.button.text-only {
+    height: 100%;
+    margin: 0;
+    padding: 0 8px;
+    color: var(--text-color-secondary);
+    font: var(--quickie-caption);
+}
+
+body.quickie-local-inspector .network .network-detail.resource .navigation-bar > .item.radio.button.text-only.selected {
+    color: var(--text-color);
+    box-shadow: inset 0 -2px var(--system-accent-color);
+}
+
+body.quickie-local-inspector .network .network-detail.resource .navigation-bar > .item.radio.button.text-only:focus-visible {
+    outline: 2px solid -webkit-focus-ring-color;
+    outline-offset: -2px;
+}
+
+body.quickie-local-inspector .network-detail.resource .resource-headers {
+    container: request-header-pane / inline-size;
+    padding: 12px;
+    color: var(--text-color);
+    font: var(--quickie-mono-small);
+}
+
+body.quickie-local-inspector .network-detail.resource .resource-headers > section {
+    padding: 0;
+}
+
+body.quickie-local-inspector .network-detail.resource .resource-headers > section + section {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--separator-color);
+}
+
+body.quickie-local-inspector .network-detail.resource .resource-headers > section > .title {
+    margin-bottom: 4px;
+    font: var(--quickie-caption);
+    font-weight: 600;
+}
+
+body.quickie-local-inspector .network-detail.resource .resource-headers .redirect-nav-link {
+    visibility: visible;
+}
+
+body.quickie-local-inspector .network-detail.resource .resource-headers > section > .details {
+    margin-inline-start: 0;
+    border-inline-start: 0;
+    overflow-wrap: anywhere;
+    word-break: normal;
+}
+
+body.quickie-local-inspector .network-detail.resource .resource-headers > section > .details > p {
+    padding: 4px 0;
+}
+
+body.quickie-local-inspector .network-detail.resource .resource-headers > section > .details > .pair {
+    display: grid;
+    grid-template-columns: minmax(96px, 28%) minmax(0, 1fr);
+    column-gap: 8px;
+    margin-inline-start: 0;
+}
+
+body.quickie-local-inspector .network-detail.resource .resource-headers > section > .details > .pair > .key {
+    color: var(--text-color-secondary);
+    margin-inline-start: 0;
+    font-weight: normal;
+}
+
+body.quickie-local-inspector .network-detail.resource .resource-headers .h1-status > .key {
+    grid-column: 1 / -1;
+}
+
+body.quickie-local-inspector .network-detail.resource .resource-headers .pair.initiator > .value {
+    min-width: 0;
+}
+
+body.quickie-local-inspector .network-detail.resource .resource-headers .pair.initiator .go-to-link {
+    overflow-wrap: anywhere;
+}
+
+body.quickie-local-inspector .network-detail.resource .resource-headers > section > br {
+    line-height: 0;
+}
+
+body.quickie-local-inspector .network-detail.resource :is(.request-summary-status.success, .status-success > .value) {
+    color: color-mix(in srgb, -apple-system-green 60%, var(--text-color));
+    font-weight: 600;
+}
+
+body.quickie-local-inspector .network-detail.resource :is(.request-summary-status.failed, .status-error > .value) {
+    color: var(--error-text-color);
+    font-weight: 600;
+}
+
+@container request-header-pane (max-width: 336px) {
+    body.quickie-local-inspector .network-detail.resource .resource-headers > section > .details > .pair:is(.url, .header, .h2-pseudo-header) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    body.quickie-local-inspector .network-detail.resource .resource-headers > section > .details > .pair.url + .url {
+        padding-top: 0;
+    }
+
+    body.quickie-local-inspector .network-detail.resource .resource-headers > section > .details > .pair.url + .url > .key {
+        display: none;
+    }
+}

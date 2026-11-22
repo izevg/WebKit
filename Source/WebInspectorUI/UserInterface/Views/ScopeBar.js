@@ -193,27 +193,19 @@ WI.ScopeBar = class ScopeBar extends WI.NavigationItem
     _handleKeyDown(event)
     {
         if (event.code === "ArrowLeft" || event.code === "ArrowRight") {
-            event.stop();
-            let focusedIndex = -1;
-
-            for (let i = 0; i < this._items.length; ++i) {
-                let element = this._items[i].element;
-                if (element === document.activeElement) {
-                    focusedIndex = i;
-                    break;
-                }
-            }
-
+            let items = this._items.filter((item) => !item.hidden && item.element.parentNode === this._element);
+            let focusedIndex = items.findIndex((item) => item.element === document.activeElement);
             if (focusedIndex === -1)
                 return;
+            event.stop();
 
             let delta = (event.code === "ArrowLeft") ? -1 : 1;
             if (WI.resolveLayoutDirectionForElement(this._element) === WI.LayoutDirection.RTL)
                 delta *= -1;
 
             focusedIndex += delta;
-            focusedIndex = (focusedIndex + this._items.length) % this._items.length;
-            this._items[focusedIndex].element.focus();
+            focusedIndex = (focusedIndex + items.length) % items.length;
+            items[focusedIndex].element.focus();
         }
     }
 };

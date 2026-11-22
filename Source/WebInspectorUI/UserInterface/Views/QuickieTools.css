@@ -18,6 +18,28 @@ body.quickie-local-inspector .tab.network .network-toolbar > .filter-bar {
     min-width: 104px;
 }
 
+body.quickie-local-inspector .tab.network .network-toolbar {
+    gap: 8px;
+}
+
+body.quickie-local-inspector .tab.network.quickie-network-single-row .network-filter-toolbar {
+    display: none;
+}
+
+body.quickie-local-inspector .tab.network :is(.network-toolbar, .network-filter-toolbar) > :is(.scope-bar, .network-other-filters-button, .clear-network-items, .network-preserve-requests) {
+    flex-shrink: 0;
+}
+
+body.quickie-local-inspector .tab.network .network-other-filters-button:focus-visible,
+body.quickie-local-inspector .tab.network .scope-bar > li:focus-visible {
+    outline: 2px solid -webkit-focus-ring-color;
+    outline-offset: -2px;
+}
+
+body.quickie-local-inspector .tab.network .network-other-filters-button.active-request-type > .glyph {
+    color: var(--glyph-color-active);
+}
+
 body.quickie-local-inspector .tab.network .network-toolbar > .flexible-space {
     flex-grow: 0;
 }
@@ -28,17 +50,17 @@ body.quickie-local-inspector .tab.network .network-filter-toolbar {
     background: var(--background-color-content);
 }
 
-body.quickie-local-inspector .network-filter-toolbar .scope-bar {
+body.quickie-local-inspector .tab.network .scope-bar {
     --scope-bar-text-color-override: var(--text-color);
     --scope-bar-background-color-override: color-mix(in srgb, var(--system-accent-color) 18%, transparent);
     --scope-bar-border-color-override: transparent;
 }
 
-body.quickie-local-inspector .network-filter-toolbar .scope-bar > li {
+body.quickie-local-inspector .tab.network .scope-bar > li {
     border-radius: 6px;
 }
 
-body.quickie-local-inspector .network-filter-toolbar .scope-bar > li::after {
+body.quickie-local-inspector .tab.network .scope-bar > li::after {
     border-radius: inherit;
 }
 

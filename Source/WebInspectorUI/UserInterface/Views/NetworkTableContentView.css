@@ -259,15 +259,15 @@ body[dir=rtl] .network-table > .table .cell.name > .status {
     height: 14px;
 }
 
-.network-table.showing-detail:not(.detail-stacked, .detail-drawer) > .table .cell:not(.name) {
+.network-table.showing-detail:not(.detail-stacked, .detail-drawer, .quickie-network) > .table .cell:not(.name) {
     display: none;
 }
 
-.network-table.showing-detail:not(.detail-stacked, .detail-drawer) > .table .resizer:not(:first-of-type) {
+.network-table.showing-detail:not(.detail-stacked, .detail-drawer, .quickie-network) > .table .resizer:not(:first-of-type) {
     display: none;
 }
 
-.network-table.showing-detail:not(.detail-stacked, .detail-drawer) > .table .timeline-ruler {
+.network-table.showing-detail:not(.detail-stacked, .detail-drawer, .quickie-network) > .table .timeline-ruler {
     display: none;
 }
 
@@ -279,6 +279,32 @@ body.mac-platform .network-table > .table > .data-container > .data-list > li,
 body.mac-platform .network-table > .table :not(.header) .cell.waterfall {
     height: 24px;
     line-height: 24px;
+}
+
+body.mac-platform .quickie-network > .table > .data-container > .data-list {
+    background-size: 100% 64px;
+}
+
+body.mac-platform .quickie-network > .table > .data-container > .data-list > li,
+body.mac-platform .quickie-network > .table :not(.header) .cell.waterfall {
+    height: 32px;
+    line-height: 32px;
+}
+
+.quickie-network > .table > .data-container .cell.name:has(.request-origin) {
+    position: relative;
+    padding-bottom: 12px;
+    line-height: 20px;
+}
+
+.quickie-network .cell.name .request-origin {
+    position: absolute;
+    inset: auto 8px 2px 28px;
+    overflow: hidden;
+    color: var(--text-color-secondary);
+    font-size: 10px;
+    line-height: 11px;
+    text-overflow: ellipsis;
 }
 
 .network-detail-resizer,

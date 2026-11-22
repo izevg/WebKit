@@ -453,7 +453,7 @@ WI.Table = class Table extends WI.View
         this.reloadData();
     }
 
-    showColumn(column)
+    showColumn(column, {persist = true} = {})
     {
         console.assert(this._columnSpecs.get(column.identifier) === column, "Column not in this table.");
         console.assert(!column.locked, "Locked columns should always be shown.");
@@ -473,7 +473,7 @@ WI.Table = class Table extends WI.View
 
         // Save user preference for this column to be visible.
         let savedColumnVisibility = this._columnVisibilitySetting.value;
-        if (savedColumnVisibility[column.identifier] !== true) {
+        if (persist && savedColumnVisibility[column.identifier] !== true) {
             let copy = {...savedColumnVisibility};
             if (column.defaultHidden)
                 copy[column.identifier] = true;
@@ -528,7 +528,7 @@ WI.Table = class Table extends WI.View
         }
     }
 
-    hideColumn(column)
+    hideColumn(column, {persist = true} = {})
     {
         console.assert(this._columnSpecs.get(column.identifier) === column, "Column not in this table.");
         console.assert(!column.locked, "Locked columns should always be shown.");
@@ -551,7 +551,7 @@ WI.Table = class Table extends WI.View
 
         // Save user preference for this column to be hidden.
         let savedColumnVisibility = this._columnVisibilitySetting.value;
-        if (savedColumnVisibility[column.identifier] !== false) {
+        if (persist && savedColumnVisibility[column.identifier] !== false) {
             let copy = {...savedColumnVisibility};
             if (column.defaultHidden)
                 delete copy[column.identifier];

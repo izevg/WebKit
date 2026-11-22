@@ -37,11 +37,16 @@ WI.NetworkTabContentView = class NetworkTabContentView extends WI.TabContentView
         let filterNavigationItems = this._networkTableContentView.filterNavigationItems;
         if (document.body.classList.contains("quickie-local-inspector")) {
             let [urlFilter, ...requestFilters] = filterNavigationItems;
-            this._contentBrowser.navigationBar.element.classList.add("network-toolbar");
-            this._contentBrowser.navigationBar.insertNavigationItem(urlFilter, 0);
+            this._quickieRequestFilters = requestFilters;
+            let requestToolbar = this._contentBrowser.navigationBar;
+            requestToolbar.element.classList.add("network-toolbar");
+            requestToolbar.sizesToFit = true;
+            requestToolbar.insertNavigationItem(urlFilter, 0);
 
             let filterBar = new WI.NavigationBar(null, {navigationItems: requestFilters});
+            filterBar.sizesToFit = true;
             filterBar.element.classList.add("network-filter-toolbar");
+            this._quickieFilterBar = filterBar;
             this._contentBrowser.insertSubviewBefore(filterBar, this._contentBrowser.contentViewContainer);
         } else {
             for (let i = 0; i < filterNavigationItems.length; ++i)
@@ -87,6 +92,26 @@ WI.NetworkTabContentView = class NetworkTabContentView extends WI.TabContentView
         dropZoneView.text = WI.UIString("Import HAR");
         dropZoneView.targetElement = this.element;
         this.addSubview(dropZoneView);
+    }
+
+    sizeDidChange()
+    {
+        super.sizeDidChange();
+        if (!this._quickieFilterBar)
+            return;
+
+        let singleRow = this.element.clientWidth >= 760;
+        if (this._quickieSingleRow === singleRow)
+            return;
+        this._quickieSingleRow = singleRow;
+
+        let activeElement = document.activeElement;
+        let destination = singleRow ? this._contentBrowser.navigationBar : this._quickieFilterBar;
+        for (let [index, item] of this._quickieRequestFilters.entries())
+            destination.insertNavigationItem(item, index + (singleRow ? 1 : 0));
+        this.element.classList.toggle("quickie-network-single-row", singleRow);
+        if (this._quickieRequestFilters.some((item) => item.element.contains(activeElement)))
+            activeElement.focus({preventScroll: true});
     }
 
     get canHandleFindEvent()

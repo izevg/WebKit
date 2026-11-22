@@ -111,6 +111,11 @@ WI.NetworkDetailView = class NetworkDetailView extends WI.View
         return this._detailNavigationItemMap.get(identifier);
     }
 
+    get preferredContentViewSetting()
+    {
+        return WI.settings.selectedNetworkDetailContentViewIdentifier;
+    }
+
     showContentViewForIdentifier(identifier)
     {
         // Implemented by subclasses.
@@ -124,12 +129,12 @@ WI.NetworkDetailView = class NetworkDetailView extends WI.View
 
         // Restore the preferred navigation item.
         let firstNavigationItem = null;
-        let defaultIdentifier = WI.settings.selectedNetworkDetailContentViewIdentifier.value;
+        let defaultIdentifier = this.preferredContentViewSetting.value;
         for (let navigationItem of this._contentBrowser.navigationBar.navigationItems) {
             if (!(navigationItem instanceof WI.RadioButtonNavigationItem))
                 continue;
 
-            if (!detailNavigationItems.includes(navigationItem))
+            if (navigationItem.hidden || !detailNavigationItems.includes(navigationItem))
                 continue;
 
             if (!firstNavigationItem)
@@ -160,7 +165,7 @@ WI.NetworkDetailView = class NetworkDetailView extends WI.View
         this.showContentViewForIdentifier(navigationItem.identifier);
 
         console.assert(navigationItem.identifier);
-        WI.settings.selectedNetworkDetailContentViewIdentifier.value = navigationItem.identifier;
+        this.preferredContentViewSetting.value = navigationItem.identifier;
     }
 
     _handleCloseButton(event)

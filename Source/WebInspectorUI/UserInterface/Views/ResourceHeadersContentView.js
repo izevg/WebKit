@@ -25,7 +25,7 @@
 
 WI.ResourceHeadersContentView = class ResourceHeadersContentView extends WI.ContentView
 {
-    constructor(resource, entry, delegate)
+    constructor(resource, entry, delegate, {payloadOnly = false} = {})
     {
         super(null);
 
@@ -33,9 +33,15 @@ WI.ResourceHeadersContentView = class ResourceHeadersContentView extends WI.Cont
         console.assert(delegate);
 
         this._resource = resource;
-        this._resource.addEventListener(WI.Resource.Event.MetricsDidChange, this._resourceMetricsDidChange, this);
-        this._resource.addEventListener(WI.Resource.Event.RequestHeadersDidChange, this._resourceRequestHeadersDidChange, this);
-        this._resource.addEventListener(WI.Resource.Event.ResponseReceived, this._resourceResponseReceived, this);
+        this._payloadOnly = payloadOnly;
+        this._usesQuickieLayout = document.body.classList.contains("quickie-local-inspector");
+        if (this._payloadOnly)
+            this._resource.addEventListener(WI.Resource.Event.RequestDataDidChange, this._resourcePayloadDidChange, this);
+        else {
+            this._resource.addEventListener(WI.Resource.Event.MetricsDidChange, this._resourceMetricsDidChange, this);
+            this._resource.addEventListener(WI.Resource.Event.RequestHeadersDidChange, this._resourceRequestHeadersDidChange, this);
+            this._resource.addEventListener(WI.Resource.Event.ResponseReceived, this._resourceResponseReceived, this);
+        }
 
         this._entry = entry;
         this._delegate = delegate;
@@ -52,6 +58,7 @@ WI.ResourceHeadersContentView = class ResourceHeadersContentView extends WI.Cont
         this.element.classList.add("resource-details", "resource-headers");
         this.element.tabIndex = 0;
 
+        this._needsPayloadRefresh = false;
         this._needsSummaryRefresh = false;
         this._needsRedirectHeadersRefresh = false;
         this._needsRequestHeadersRefresh = false;
@@ -64,19 +71,21 @@ WI.ResourceHeadersContentView = class ResourceHeadersContentView extends WI.Cont
     {
         super.initialLayout();
 
-        this._summarySection = new WI.ResourceDetailsSection(WI.UIString("Summary"), "summary");
-        this.element.appendChild(this._summarySection.element);
-        this._refreshSummarySection();
+        if (!this._payloadOnly) {
+            this._summarySection = new WI.ResourceDetailsSection(this._usesQuickieLayout ? WI.UIString("General") : WI.UIString("Summary"), "summary");
+            this.element.appendChild(this._summarySection.element);
+            this._refreshSummarySection();
 
-        this._refreshRedirectHeadersSections();
+            this._refreshRedirectHeadersSections();
 
-        this._requestHeadersSection = new WI.ResourceDetailsSection(WI.UIString("Request"), "headers");
-        this.element.appendChild(this._requestHeadersSection.element);
-        this._refreshRequestHeadersSection();
+            this._requestHeadersSection = new WI.ResourceDetailsSection(this._usesQuickieLayout ? WI.UIString("Request Headers") : WI.UIString("Request"), "headers");
+            this.element.appendChild(this._requestHeadersSection.element);
+            this._refreshRequestHeadersSection();
 
-        this._responseHeadersSection = new WI.ResourceDetailsSection(WI.UIString("Response"), "headers");
-        this.element.appendChild(this._responseHeadersSection.element);
-        this._refreshResponseHeadersSection();
+            this._responseHeadersSection = new WI.ResourceDetailsSection(this._usesQuickieLayout ? WI.UIString("Response Headers") : WI.UIString("Response"), "headers");
+            this.element.appendChild(this._responseHeadersSection.element);
+            this._refreshResponseHeadersSection();
+        }
 
         if (this._resource.urlComponents.queryString) {
             this._queryStringSection = new WI.ResourceDetailsSection(WI.UIString("Query String Parameters"));
@@ -99,6 +108,11 @@ WI.ResourceHeadersContentView = class ResourceHeadersContentView extends WI.Cont
     layout()
     {
         super.layout();
+
+        if (this._needsPayloadRefresh) {
+            this._needsPayloadRefresh = false;
+            this._refreshRequestDataSection();
+        }
 
         if (this._needsSummaryRefresh) {
             this._refreshSummarySection();
@@ -131,9 +145,13 @@ WI.ResourceHeadersContentView = class ResourceHeadersContentView extends WI.Cont
 
     closed()
     {
-        this._resource.removeEventListener(WI.Resource.Event.MetricsDidChange, this._resourceMetricsDidChange, this);
-        this._resource.removeEventListener(WI.Resource.Event.RequestHeadersDidChange, this._resourceRequestHeadersDidChange, this);
-        this._resource.removeEventListener(WI.Resource.Event.ResponseReceived, this._resourceResponseReceived, this);
+        if (this._payloadOnly)
+            this._resource.removeEventListener(WI.Resource.Event.RequestDataDidChange, this._resourcePayloadDidChange, this);
+        else {
+            this._resource.removeEventListener(WI.Resource.Event.MetricsDidChange, this._resourceMetricsDidChange, this);
+            this._resource.removeEventListener(WI.Resource.Event.RequestHeadersDidChange, this._resourceRequestHeadersDidChange, this);
+            this._resource.removeEventListener(WI.Resource.Event.ResponseReceived, this._resourceResponseReceived, this);
+        }
 
         super.closed();
     }
@@ -251,14 +269,24 @@ WI.ResourceHeadersContentView = class ResourceHeadersContentView extends WI.Cont
         let detailsElement = this._summarySection.detailsElement;
         detailsElement.removeChildren();
 
-        for (let redirect of this._resource.redirects)
-            this._summarySection.appendKeyValuePair(WI.UIString("URL"), redirect.url.insertWordBreakCharacters(), "url");
-        this._summarySection.appendKeyValuePair(WI.UIString("URL"), this._resource.displayURL.insertWordBreakCharacters(), "url");
+        let urls = [...this._resource.redirects.map((redirect) => redirect.url), this._resource.displayURL];
+        for (let url of urls)
+            this._summarySection.appendKeyValuePair(WI.UIString("URL"), this._usesQuickieLayout ? url : url.insertWordBreakCharacters(), "url");
+
+        if (this._usesQuickieLayout && this._resource.requestMethod)
+            this._summarySection.appendKeyValuePair(WI.UIString("Method"), this._resource.requestMethod);
 
         let status = emDash;
         if (!isNaN(this._resource.statusCode))
             status = this._resource.statusCode + (this._resource.statusText ? " " + this._resource.statusText : "");
-        this._summarySection.appendKeyValuePair(WI.UIString("Status"), status);
+        let statusPair = this._summarySection.appendKeyValuePair(WI.UIString("Status"), status);
+        if (this._usesQuickieLayout) {
+            let code = this._resource.statusCode;
+            statusPair.classList.toggle("status-success", code >= 200 && code < 300);
+            statusPair.classList.toggle("status-error", code >= 400);
+            if (this._resource.protocol)
+                this._summarySection.appendKeyValuePair(WI.UIString("Protocol"), this._resource.protocol);
+        }
 
         // FIXME: <https://webkit.org/b/178827> Web Inspector: Should be able to link directly to the ServiceWorker that handled a particular load
 
@@ -430,6 +458,9 @@ WI.ResourceHeadersContentView = class ResourceHeadersContentView extends WI.Cont
         detailsElement.removeChildren();
 
         let requestData = this._resource.requestData;
+        if (!requestData)
+            return;
+
         let requestDataContentType = this._resource.requestDataContentType || "";
 
         if (requestDataContentType && requestDataContentType.match(/^application\/x-www-form-urlencoded\s*(;.*)?$/i)) {
@@ -518,6 +549,12 @@ WI.ResourceHeadersContentView = class ResourceHeadersContentView extends WI.Cont
         this._needsSummaryRefresh = true;
         this._needsRequestHeadersRefresh = true;
         this._needsResponseHeadersRefresh = true;
+        this.needsLayout();
+    }
+
+    _resourcePayloadDidChange(event)
+    {
+        this._needsPayloadRefresh = true;
         this.needsLayout();
     }
 
