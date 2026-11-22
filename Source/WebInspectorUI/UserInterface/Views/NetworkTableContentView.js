@@ -2016,7 +2016,7 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         resizer.classList.add("network-detail-resizer");
         resizer.tabIndex = 0;
         resizer.setAttribute("role", "separator");
-        resizer.setAttribute("aria-label", WI.UIString("Request details height"));
+        resizer.setAttribute("aria-label", WI.unlocalizedString("Request details height"));
         resizer.setAttribute("aria-orientation", "horizontal");
         resizer.setAttribute("aria-valuemin", "0");
         resizer.setAttribute("aria-valuemax", "100");
@@ -2035,8 +2035,8 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         header.className = "network-detail-drawer-header";
 
         this._requestsBackButton = header.appendChild(document.createElement("button"));
-        this._requestsBackButton.textContent = WI.UIString("Requests");
-        this._requestsBackButton.setAttribute("aria-label", WI.UIString("Back to requests"));
+        this._requestsBackButton.textContent = WI.unlocalizedString("Requests");
+        this._requestsBackButton.setAttribute("aria-label", WI.unlocalizedString("Back to requests"));
         this._requestsBackButton.addEventListener("click", () => this._returnToRequests());
 
         this._drawerRequestName = header.appendChild(document.createElement("span"));

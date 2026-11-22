@@ -191,14 +191,14 @@ WI.DOMStorageContentView = class DOMStorageContentView extends WI.ContentView
             this._valuePreview = new WI.View;
             this._valuePreview.element.classList.add("storage-value-preview");
             this._valuePreview.element.setAttribute("role", "region");
-            this._valuePreview.element.setAttribute("aria-label", WI.UIString("Selected storage value"));
+            this._valuePreview.element.setAttribute("aria-label", WI.unlocalizedString("Selected storage value"));
 
             let header = this._valuePreview.element.appendChild(document.createElement("div"));
             header.className = "storage-value-preview-header";
             this._valuePreviewLabel = header.appendChild(document.createElement("span"));
 
             let copyButton = header.appendChild(document.createElement("button"));
-            copyButton.textContent = WI.UIString("Copy Value");
+            copyButton.textContent = WI.unlocalizedString("Copy Value");
             copyButton.addEventListener("click", () => {
                 let value = this._selectedStorageValue();
                 if (typeof value === "string")
@@ -216,9 +216,9 @@ WI.DOMStorageContentView = class DOMStorageContentView extends WI.ContentView
         this._valuePreviewEditor.mimeType = /^\s*[\[{]/.test(preview) ? "application/json" : "text/plain";
         this._valuePreviewEditor.string = preview;
         if (value.length > previewLimit)
-            this._valuePreviewLabel.textContent = WI.UIString("Value preview truncated");
+            this._valuePreviewLabel.textContent = WI.unlocalizedString("Value preview truncated");
         else
-            this._valuePreviewLabel.textContent = value.length ? WI.UIString("Value") : WI.UIString("Empty value");
+            this._valuePreviewLabel.textContent = value.length ? WI.UIString("Value") : WI.unlocalizedString("Empty value");
 
         this.needsLayout(WI.View.LayoutReason.Resize);
     }
