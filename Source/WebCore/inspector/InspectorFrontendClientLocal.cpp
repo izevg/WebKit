@@ -75,8 +75,12 @@ static constexpr ASCIILiteral inspectorAttachedHeightSetting = "inspectorAttache
 static const unsigned defaultAttachedHeight = 300;
 static const float minimumAttachedHeight = 250.0f;
 static const float maximumAttachedHeightRatio = 0.75f;
-static const float minimumAttachedWidth = 500.0f;
 static const float minimumAttachedInspectedWidth = 320.0f;
+#if PLATFORM(MAC)
+static constexpr float minimumAttachedWidth = 340 + 2 * InspectorFrontendClientLocal::attachedWindowInset;
+#else
+static constexpr float minimumAttachedWidth = 500.0f;
+#endif
 
 class InspectorBackendDispatchTask : public RefCounted<InspectorBackendDispatchTask> {
     WTF_MAKE_TZONE_ALLOCATED(InspectorBackendDispatchTask);
@@ -267,7 +271,7 @@ bool InspectorFrontendClientLocal::canAttachWindow()
     unsigned inspectedPageHeight = view->visibleHeight();
     unsigned inspectedPageWidth = view->visibleWidth();
     unsigned maximumAttachedHeight = inspectedPageHeight * maximumAttachedHeightRatio;
-    return minimumAttachedHeight <= maximumAttachedHeight && minimumAttachedWidth <= inspectedPageWidth;
+    return minimumAttachedHeight <= maximumAttachedHeight && 500 <= inspectedPageWidth;
 }
 
 void InspectorFrontendClientLocal::setDockingUnavailable(bool unavailable)
@@ -444,6 +448,13 @@ unsigned InspectorFrontendClientLocal::constrainedAttachedWindowWidth(unsigned p
 {
     return roundf(std::max(minimumAttachedWidth, std::min<float>(preferredWidth, totalWindowWidth - minimumAttachedInspectedWidth)));
 }
+
+#if PLATFORM(MAC)
+bool InspectorFrontendClientLocal::canAttachWindowToSide(unsigned totalWindowWidth)
+{
+    return minimumAttachedWidth + minimumAttachedInspectedWidth <= totalWindowWidth;
+}
+#endif
 
 void InspectorFrontendClientLocal::sendMessageToBackend(const String& message)
 {

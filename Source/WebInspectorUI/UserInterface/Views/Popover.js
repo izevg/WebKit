@@ -55,6 +55,11 @@ WI.Popover = class Popover extends WI.Object
 
     // Public
 
+    static get hasVisiblePopover()
+    {
+        return !!WI.Popover._visibleInstance?.visible;
+    }
+
     get element() { return this._element; }
 
     get visible()

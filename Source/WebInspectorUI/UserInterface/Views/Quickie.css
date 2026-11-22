@@ -1,0 +1,113 @@
+/*
+ * Copyright (C) 2026 Quickie contributors
+ * SPDX-License-Identifier: BSD-2-Clause
+ */
+
+body.mac-platform {
+    --text-color: -apple-system-label;
+    --text-color-secondary: -apple-system-secondary-label;
+    --console-secondary-text-color: var(--text-color-secondary);
+}
+
+body.mac-platform.docked {
+    border-inline: 0;
+}
+
+body.mac-platform .tab-bar {
+    --tab-bar-background: var(--background-color-intermediate);
+    --tab-item-light-border-color: var(--separator-color);
+    --tab-item-medium-border-color: var(--separator-color);
+    --tab-item-dark-border-color: var(--border-color);
+}
+
+body.mac-platform.window-inactive .tab-bar > .tabs > .item:not(.selected) {
+    --tab-item-background: var(--tab-bar-background);
+}
+
+body.mac-platform .tab-bar > .tabs > .item:not(.disabled).selected {
+    --tab-item-background: var(--background-color-content);
+    box-shadow: inset 0 -2px var(--system-accent-color);
+}
+
+body.mac-platform.window-inactive .tab-bar > .tabs > .item:not(.disabled).selected {
+    box-shadow: inset 0 -2px var(--border-color);
+}
+
+body.mac-platform:not(.window-inactive) .tab-bar > .tabs:not(.animating) > .item:not(.selected, .disabled):hover {
+    --tab-item-background: var(--button-background-color-hover);
+}
+
+body.mac-platform .tab-bar > .tabs > .item:focus-visible {
+    outline: 2px solid -webkit-focus-ring-color;
+    outline-offset: -3px;
+}
+
+body.mac-platform .content-view.log > .navigation-bar,
+body.mac-platform .quick-console {
+    background-color: var(--background-color-intermediate);
+}
+
+body.mac-platform .quick-console {
+    padding-inline: 8px;
+}
+
+body.mac-platform .quick-console.showing-log {
+    border-top-color: var(--separator-color) !important;
+}
+
+body.mac-platform .console-message {
+    padding-block: 6px;
+}
+
+body.mac-platform .console-message .go-to-link,
+body.mac-platform .console-messages:focus .console-item.selected .go-to-link {
+    color: var(--text-color-secondary);
+}
+
+body.mac-platform .console-message .go-to-link:is(:hover, :focus-visible) {
+    color: var(--text-color);
+    text-decoration: underline;
+}
+
+body.mac-platform .console-messages:focus .console-item.selected {
+    background-color: color-mix(in srgb, var(--system-accent-color) 18%, var(--background-color-content));
+    border-color: var(--separator-color);
+}
+
+body.mac-platform .network-detail {
+    background-color: var(--background-color-content);
+}
+
+body.mac-platform.compact-storage #content {
+    grid-template:
+        "navigation-sidebar" auto
+        "tab-browser" minmax(110px, 1fr)
+        "details-sidebar" auto / minmax(0, 1fr);
+}
+
+body.mac-platform.compact-storage #navigation-sidebar:not(.collapsed) {
+    width: 100% !important;
+    height: min(30vh, 180px);
+    border-bottom: 1px solid var(--separator-color);
+}
+
+body.mac-platform.compact-storage #tab-browser {
+    min-width: 0;
+}
+
+@media (prefers-contrast: more) {
+    body.mac-platform .tab-bar > .tabs > .item:not(.disabled).selected {
+        outline: 2px solid var(--text-color);
+        outline-offset: -2px;
+    }
+
+    body.mac-platform .tab-bar > .tabs > .item:focus-visible {
+        outline: 2px solid -webkit-focus-ring-color;
+        outline-offset: -4px;
+    }
+
+    body.mac-platform .console-item.selected {
+        outline: 2px solid var(--text-color);
+        outline-offset: -2px;
+    }
+}

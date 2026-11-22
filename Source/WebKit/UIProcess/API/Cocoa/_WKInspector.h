@@ -71,6 +71,7 @@ WK_CLASS_AVAILABLE(macos(10.14.4), ios(12.2))
  * and tabs that are not available for the inspected page are ignored.
  */
 - (void)showTab:(NSString *)tabIdentifier WK_API_AVAILABLE(macos(WK_MAC_TBA), ios(WK_IOS_TBA), visionos(WK_XROS_TBA));
+- (void)showHeapAllocations WK_API_AVAILABLE(macos(WK_MAC_TBA), ios(WK_IOS_TBA), visionos(WK_XROS_TBA));
 
 /**
  * @abstract Attaches the associated Web Inspector instance to the given side

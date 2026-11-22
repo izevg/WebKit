@@ -31,6 +31,48 @@
     bottom: 0;
 }
 
+.content-view.dom-storage > .storage-value-preview {
+    display: none;
+}
+
+.content-view.dom-storage.showing-value-preview {
+    --storage-value-preview-height: clamp(72px, 38%, 200px);
+}
+
+.content-view.dom-storage.showing-value-preview > .data-grid {
+    bottom: var(--storage-value-preview-height);
+}
+
+.content-view.dom-storage.showing-value-preview > .storage-value-preview {
+    position: absolute;
+    inset: auto 0 0;
+    height: var(--storage-value-preview-height);
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--separator-color);
+}
+
+.storage-value-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 8px;
+    color: var(--text-color-secondary);
+    background: var(--background-color-intermediate);
+}
+
+.storage-value-preview-header > button {
+    flex-shrink: 0;
+    min-height: 24px;
+}
+
+.storage-value-preview > .text-editor {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+}
+
 .content-view.dom-storage > .data-grid tr:is(.duplicate-key, .missing-key) td.key-column,
 .content-view.dom-storage > .data-grid tr.missing-value td.value-column {
     background-color: hsl(0, 100%, 96%);

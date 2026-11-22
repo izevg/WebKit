@@ -380,6 +380,19 @@ WI.TimelineTabContentView = class TimelineTabContentView extends WI.ContentBrows
         return representedObject instanceof WI.TimelineRecording;
     }
 
+    showHeapAllocations()
+    {
+        if (!this._displayedRecording && WI.timelineManager.activeRecording)
+            this._recordingLoaded();
+
+        if (!this._displayedRecording?.timelines.has(WI.TimelineRecord.Type.HeapAllocations))
+            return;
+
+        const selectedByUser = false;
+        this._changeViewMode(WI.TimelineOverview.ViewMode.Timelines, selectedByUser);
+        this._showTimelineViewForType(WI.TimelineRecord.Type.HeapAllocations);
+    }
+
     get canHandleFindEvent()
     {
         console.assert(this._displayedContentView);

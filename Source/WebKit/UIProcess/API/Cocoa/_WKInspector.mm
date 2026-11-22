@@ -199,6 +199,11 @@ private:
     protect(*_inspector)->showTab(tabIdentifier);
 }
 
+- (void)showHeapAllocations
+{
+    protect(*_inspector)->showTab("heap-allocations"_s);
+}
+
 - (void)attachToSide:(_WKInspectorAttachmentSide)side
 {
     switch (side) {

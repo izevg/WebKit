@@ -43,11 +43,15 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
 
         this._table = null;
         this._hoveredRowIndex = null;
-        this._nameColumnWidthSetting = new WI.Setting("network-table-content-view-name-column-width", WI.Sidebar.AbsoluteMinimumWidth);
+        this._usesCompactLayout = WI.Platform.name === "mac";
+        this._nameColumnWidthSetting = new WI.Setting("network-table-content-view-name-column-width", this._usesCompactLayout ? 200 : WI.Sidebar.AbsoluteMinimumWidth);
 
         this._selectedObject = null;
         this._detailView = null;
         this._detailViewMap = new Map;
+        this._detailLayout = "side";
+        this._preferredDetailLayout = "side";
+        this._returnedToRequests = false;
 
         this._domNodeEntries = new Map;
 
@@ -393,6 +397,11 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
 
     networkDetailViewClose(networkDetailView)
     {
+        if (this._detailLayout === "drawer") {
+            this._returnToRequests();
+            return;
+        }
+
         this._selectedObject = null;
         this._table.deselectAll();
         this._hideDetailView();
@@ -522,6 +531,9 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
             return;
 
         this._selectedObject = representedObject;
+        if (this._selectedObject && this._preferredDetailLayout === "drawer" && !this._detailView)
+            return;
+
         if (this._selectedObject)
             this._showDetailView(this._selectedObject);
         else
@@ -1332,13 +1344,14 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         this._waterfallTimelineRuler.allowsClippedLabels = true;
 
         this._nameColumn = new WI.TableColumn("name", WI.UIString("Name"), {
-            minWidth: this._nameColumnWidthSetting.defaultValue,
+            minWidth: this._usesCompactLayout ? 112 : this._nameColumnWidthSetting.defaultValue,
             maxWidth: 500,
             initialWidth: this._nameColumnWidthSetting.value,
             resizeType: WI.TableColumn.ResizeType.Locked,
         });
 
         this._domainColumn = new WI.TableColumn("domain", WI.UIString("Domain"), {
+            hidden: this._usesCompactLayout,
             minWidth: 120,
             maxWidth: 200,
             initialWidth: 150,
@@ -1352,6 +1365,7 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         });
 
         this._typeColumn = new WI.TableColumn("type", WI.UIString("Type"), {
+            hidden: this._usesCompactLayout,
             minWidth: 70,
             maxWidth: 120,
             initialWidth: 70,
@@ -1381,7 +1395,7 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         this._statusColumn = new WI.TableColumn("status", WI.UIString("Status"), {
             minWidth: 50,
             maxWidth: 50,
-            align: "left",
+            align: this._usesCompactLayout ? "right" : "left",
         });
 
         this._protocolColumn = new WI.TableColumn("protocol", WI.UIString("Protocol"), {
@@ -1392,6 +1406,7 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         });
 
         this._initiatorColumn = new WI.TableColumn("initiator", WI.UIString("Initiator"), {
+            hidden: this._usesCompactLayout,
             minWidth: 75,
             maxWidth: 175,
             initialWidth: 100,
@@ -1433,14 +1448,14 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         });
 
         this._timeColumn = new WI.TableColumn("time", WI.UIString("Time"), {
-            minWidth: 65,
+            minWidth: this._usesCompactLayout ? 56 : 65,
             maxWidth: 90,
             initialWidth: 65,
             align: "right",
         });
 
         this._waterfallColumn = new WI.TableColumn("waterfall", WI.UIString("Waterfall"), {
-            minWidth: 230,
+            minWidth: this._usesCompactLayout ? 96 : 230,
             headerView: this._waterfallTimelineRuler,
             needsReloadOnResize: true,
         });
@@ -1448,7 +1463,7 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         this._nameColumn.addEventListener(WI.TableColumn.Event.WidthDidChange, this._tableNameColumnDidChangeWidth, this);
         this._waterfallColumn.addEventListener(WI.TableColumn.Event.WidthDidChange, this._tableWaterfallColumnDidChangeWidth, this);
 
-        this._table = new WI.Table("network-table", this, this, 20);
+        this._table = new WI.Table("network-table", this, this, this._usesCompactLayout ? 24 : 20);
 
         this._table.addColumn(this._nameColumn);
         this._table.addColumn(this._domainColumn);
@@ -1474,6 +1489,8 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         }
 
         this.addSubview(this._table);
+        if (this._usesCompactLayout)
+            this._createCompactDetailControls();
 
         let statisticsContainer = this.element.appendChild(document.createElement("div"));
         statisticsContainer.className = "statistics";
@@ -1513,6 +1530,23 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
 
         if (this._statisticsDirty)
             this._updateStatistics();
+    }
+
+    sizeDidChange()
+    {
+        super.sizeDidChange();
+
+        if (!this._usesCompactLayout)
+            return;
+
+        let width = this.element.clientWidth;
+        if (width >= 700)
+            this._preferredDetailLayout = "side";
+        else
+            this._preferredDetailLayout = width < 420 || this.element.clientHeight < 358 ? "drawer" : "stacked";
+
+        this._updateNameColumnWidth(width);
+        this._updateDetailLayout();
     }
 
     didLayoutSubtree()
@@ -1812,6 +1846,8 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
 
         this.removeSubview(this._detailView);
         this._detailView = null;
+        if (this._usesCompactLayout)
+            this._updateDetailLayout();
         this._handleCurrentResourceDetailViewDidChange();
 
         this._table.updateLayout(WI.View.LayoutReason.Resize);
@@ -1825,6 +1861,8 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         this._detailView = this._detailViewMap.get(object);
         if (this._detailView === oldDetailView)
             return;
+
+        this._returnedToRequests = false;
 
         if (!this._detailView) {
             if (object instanceof WI.Resource) {
@@ -1869,12 +1907,19 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
             this._detailView.willShowWithCookie(this._showingRepresentedObjectCookie);
 
         this.element.classList.add("showing-detail");
-        this._table.scrollContainer.style.width = this._nameColumn.width + "px";
+        if (this._usesCompactLayout)
+            this._updateDetailLayout();
+        this._positionDetailView();
 
         // FIXME: It would be nice to avoid this.
         // Currently the ResourceDetailView is in the heirarchy but has not yet done a layout so we
         // end up seeing the table behind it. This forces us to layout now instead of after a beat.
         this.updateLayout();
+
+        if (this._detailLayout === "drawer") {
+            this._updateDrawerRequestName();
+            this._requestsBackButton.focus({preventScroll: true});
+        }
 
         if (!oldDetailView)
             this._handleCurrentResourceDetailViewDidChange();
@@ -1886,8 +1931,139 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
             return;
 
         let side = WI.resolvedLayoutDirection() === WI.LayoutDirection.RTL ? "right" : "left";
-        this._detailView.element.style[side] = this._nameColumn.width + "px";
-        this._table.scrollContainer.style.width = this._nameColumn.width + "px";
+        let width = this._detailLayout === "side" ? this._nameColumn.width + "px" : "";
+        this._detailView.element.style[side] = width;
+        this._table.scrollContainer.style.width = width;
+    }
+
+    _createCompactDetailControls()
+    {
+        this._detailResizer = new WI.Resizer(WI.Resizer.RuleOrientation.Horizontal, this);
+        let resizer = this._detailResizer.element;
+        resizer.classList.add("network-detail-resizer");
+        resizer.tabIndex = 0;
+        resizer.setAttribute("role", "separator");
+        resizer.setAttribute("aria-label", WI.UIString("Request details height"));
+        resizer.setAttribute("aria-orientation", "horizontal");
+        resizer.setAttribute("aria-valuemin", "0");
+        resizer.setAttribute("aria-valuemax", "100");
+        resizer.setAttribute("aria-valuenow", "40");
+        resizer.addEventListener("keydown", (event) => {
+            if (event.key !== "ArrowUp" && event.key !== "ArrowDown")
+                return;
+
+            let delta = event.key === "ArrowUp" ? 12 : -12;
+            this._resizeDetailPane(this._detailView.element.offsetHeight + delta);
+            event.preventDefault();
+        });
+        this.element.appendChild(resizer);
+
+        let header = this.element.appendChild(document.createElement("div"));
+        header.className = "network-detail-drawer-header";
+
+        this._requestsBackButton = header.appendChild(document.createElement("button"));
+        this._requestsBackButton.textContent = WI.UIString("Requests");
+        this._requestsBackButton.setAttribute("aria-label", WI.UIString("Back to requests"));
+        this._requestsBackButton.addEventListener("click", () => this._returnToRequests());
+
+        this._drawerRequestName = header.appendChild(document.createElement("span"));
+
+        this.element.addEventListener("keydown", (event) => {
+            if (event.key !== "Escape" || event.defaultPrevented || this._detailLayout !== "drawer" || WI.Popover.hasVisiblePopover || WI.isEventTargetAnEditableField(event))
+                return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            this._returnToRequests();
+        });
+
+        this._table.element.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" && !event.defaultPrevented && this._selectedObject && !this._detailView) {
+                event.preventDefault();
+                this._showDetailView(this._selectedObject);
+            }
+        });
+
+        this._table.scrollContainer.addEventListener("click", (event) => {
+            if (this._selectedObject && !this._detailView && this._table.cellForRowAndColumn(this._table.selectedRow, this._nameColumn)?.contains(event.target))
+                this._showDetailView(this._selectedObject);
+        });
+    }
+
+    _returnToRequests()
+    {
+        this._returnedToRequests = true;
+        this._hideDetailView();
+        this._table.element.focus({preventScroll: true});
+    }
+
+    _updateDetailLayout()
+    {
+        let detailLayout = this._detailView ? this._preferredDetailLayout : "side";
+
+        if (this._detailLayout === detailLayout)
+            return;
+
+        let activeElement = document.activeElement;
+        this._detailLayout = detailLayout;
+        this.element.classList.toggle("detail-stacked", detailLayout === "stacked");
+        this.element.classList.toggle("detail-drawer", detailLayout === "drawer");
+        this._table.element.inert = detailLayout === "drawer";
+
+        if (detailLayout === "drawer")
+            this._updateDrawerRequestName();
+
+        if (detailLayout === "drawer" && this._table.element.contains(activeElement))
+            this._requestsBackButton.focus({preventScroll: true});
+        else if (detailLayout !== "drawer" && activeElement === this._requestsBackButton)
+            (this._detailView?.element.querySelector("button") || this._table.element).focus({preventScroll: true});
+
+        this._table.needsLayout(WI.View.LayoutReason.Resize);
+    }
+
+    _updateDrawerRequestName()
+    {
+        let request = this._detailView.representedObject;
+        this._drawerRequestName.textContent = request instanceof WI.Redirect ? WI.displayNameForURL(request.url, request.urlComponents) : request.displayName || "";
+    }
+
+    _updateNameColumnWidth(availableWidth)
+    {
+        let preferredWidth = this._nameColumnWidthSetting.value;
+        if (availableWidth < 700) {
+            let otherColumnsWidth = 0;
+            for (let column of this._table.columns) {
+                if (column !== this._nameColumn && !column.hidden)
+                    otherColumnsWidth += column.minWidth;
+            }
+            preferredWidth = Math.min(preferredWidth, availableWidth - otherColumnsWidth);
+        }
+
+        this._adjustingNameColumnWidth = true;
+        this._nameColumn.width = Math.max(this._nameColumn.minWidth, preferredWidth);
+        this._adjustingNameColumnWidth = false;
+    }
+
+    resizerDragStarted(resizer)
+    {
+        this._initialDetailHeight = this._detailView.element.offsetHeight;
+    }
+
+    resizerDragging(resizer, positionDelta)
+    {
+        if (this._detailLayout !== "stacked")
+            return;
+
+        this._resizeDetailPane(this._initialDetailHeight + positionDelta);
+    }
+
+    _resizeDetailPane(requestedHeight)
+    {
+        let height = this.element.clientHeight;
+        let detailHeight = Number.constrain(requestedHeight, 176, height - 178);
+        this.element.style.setProperty("--network-detail-height", (detailHeight / height) * 100 + "%");
+        this._detailResizer.element.setAttribute("aria-valuenow", Math.round(detailHeight * 100 / height));
+        this.needsLayout(WI.View.LayoutReason.Resize);
     }
 
     _updateEmptyFilterResultsMessage()
@@ -2838,7 +3014,8 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
         }
 
         this._table.selectRow(rowIndex);
-        this._showDetailView(this._selectedObject);
+        if (!this._returnedToRequests && (this._detailView || this._preferredDetailLayout !== "drawer"))
+            this._showDetailView(this._selectedObject);
     }
 
     _HARResources()
@@ -3008,7 +3185,8 @@ WI.NetworkTableContentView = class NetworkTableContentView extends WI.ContentVie
 
     _tableNameColumnDidChangeWidth(event)
     {
-        this._nameColumnWidthSetting.value = event.target.width;
+        if (!this._adjustingNameColumnWidth)
+            this._nameColumnWidthSetting.value = event.target.width;
 
         this._positionDetailView();
     }

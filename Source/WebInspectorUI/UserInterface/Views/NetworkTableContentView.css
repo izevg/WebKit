@@ -259,15 +259,98 @@ body[dir=rtl] .network-table > .table .cell.name > .status {
     height: 14px;
 }
 
-.network-table.showing-detail > .table .cell:not(.name) {
+.network-table.showing-detail:not(.detail-stacked, .detail-drawer) > .table .cell:not(.name) {
     display: none;
 }
 
-.network-table.showing-detail > .table .resizer:not(:first-of-type) {
+.network-table.showing-detail:not(.detail-stacked, .detail-drawer) > .table .resizer:not(:first-of-type) {
     display: none;
 }
 
-.network-table.showing-detail > .table .timeline-ruler {
+.network-table.showing-detail:not(.detail-stacked, .detail-drawer) > .table .timeline-ruler {
+    display: none;
+}
+
+body.mac-platform .network-table > .table > .data-container > .data-list {
+    background-size: 100% 48px;
+}
+
+body.mac-platform .network-table > .table > .data-container > .data-list > li,
+body.mac-platform .network-table > .table :not(.header) .cell.waterfall {
+    height: 24px;
+    line-height: 24px;
+}
+
+.network-detail-resizer,
+.network-detail-drawer-header {
+    display: none;
+}
+
+.network-table.detail-stacked > .table {
+    flex: 1;
+    min-height: 144px;
+}
+
+.network-table.detail-stacked > .network-detail-resizer {
+    display: block;
+    position: relative;
+    order: 1;
+    flex: 0 0 4px;
+    background-color: var(--separator-color);
+}
+
+.network-table.detail-stacked > .network-detail-resizer:focus-visible {
+    outline: 2px solid -webkit-focus-ring-color;
+    outline-offset: -1px;
+}
+
+.network-table.detail-stacked > .network-detail {
+    position: relative;
+    inset: auto;
+    order: 2;
+    flex: 0 0 clamp(176px, var(--network-detail-height, 40%), calc(100% - var(--network-statistics-height) - 148px));
+    border-inline-start: none;
+}
+
+.network-table.detail-stacked > .statistics {
+    order: 3;
+}
+
+.network-table.detail-drawer > .table,
+.network-table.detail-drawer > .statistics {
+    visibility: hidden;
+}
+
+.network-table.detail-drawer > .network-detail-drawer-header {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 36px;
+    z-index: 11;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding-inline: 12px;
+    background-color: var(--background-color-intermediate);
+    border-bottom: 1px solid var(--separator-color);
+}
+
+.network-detail-drawer-header > button {
+    min-height: 24px;
+    flex-shrink: 0;
+}
+
+.network-detail-drawer-header > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.network-table.detail-drawer > .network-detail {
+    inset: 36px 0 0;
+    border-inline-start: none;
+}
+
+.network-table.detail-drawer .network-detail .navigation-bar > .item.close {
     display: none;
 }
 

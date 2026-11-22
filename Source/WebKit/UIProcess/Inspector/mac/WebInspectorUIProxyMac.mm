@@ -46,6 +46,7 @@
 #import "_WKInspectorConfigurationInternal.h"
 #import "_WKInspectorInternal.h"
 #import "_WKInspectorWindowInternal.h"
+#import <QuartzCore/QuartzCore.h>
 #import <SecurityInterface/SFCertificatePanel.h>
 #import <SecurityInterface/SFCertificateView.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
@@ -69,6 +70,61 @@ static const NSUInteger windowStyleMask = NSWindowStyleMaskTitled | NSWindowStyl
 static const Seconds webViewCloseTimeout { 1_min };
 
 static void* kWindowContentLayoutObserverContext = &kWindowContentLayoutObserverContext;
+
+@interface WKQuickieInspectorDockView : NSView
+- (instancetype)initWithWebView:(WKWebView *)webView;
+@end
+
+@implementation WKQuickieInspectorDockView {
+    RetainPtr<NSView> _surface;
+}
+
+- (instancetype)initWithWebView:(WKWebView *)webView
+{
+    if (!(self = [super initWithFrame:NSZeroRect]))
+        return nil;
+
+    [self setWantsLayer:YES];
+    RetainPtr shadowLayer = [self layer];
+    shadowLayer.get().shadowColor = CGColorGetConstantColor(kCGColorBlack);
+    // Quickie's medium elevation, in Core Animation coordinates.
+    shadowLayer.get().shadowOpacity = 0.22f;
+    shadowLayer.get().shadowRadius = 24;
+    shadowLayer.get().shadowOffset = CGSizeMake(0, -20);
+
+    _surface = adoptNS([[NSView alloc] initWithFrame:NSZeroRect]);
+    [_surface setWantsLayer:YES];
+    RetainPtr surfaceLayer = [_surface layer];
+    surfaceLayer.get().cornerRadius = 16;
+    surfaceLayer.get().cornerCurve = kCACornerCurveContinuous;
+    surfaceLayer.get().masksToBounds = YES;
+    [self addSubview:_surface.get()];
+
+    [webView setFrame:NSZeroRect];
+    [webView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+    [_surface addSubview:webView];
+    return self;
+}
+
+- (void)resizeSubviewsWithOldSize:(NSSize)oldSize
+{
+    [super resizeSubviewsWithOldSize:oldSize];
+    if (!_surface)
+        return;
+
+    constexpr CGFloat inset = WebCore::InspectorFrontendClientLocal::attachedWindowInset;
+    NSRect surfaceFrame = NSInsetRect(self.bounds, inset, inset);
+    [_surface setFrame:surfaceFrame];
+
+    NSRect shadowFrame = NSInsetRect(surfaceFrame, 10, 10);
+    RetainPtr shadowPath = adoptCF(CGPathCreateWithRoundedRect(NSRectToCGRect(shadowFrame), 6, 6, nullptr));
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    [retainPtr(self.layer) setShadowPath:shadowPath.get()];
+    [CATransaction commit];
+}
+
+@end
 
 @interface WKWebInspectorUIProxyObjCAdapter () <NSWindowDelegate, WKInspectorViewControllerDelegate>
 
@@ -1017,14 +1073,27 @@ bool WebInspectorUIProxy::platformCanAttach(bool webProcessCanAttach)
     if (inspectedView.get().hidden)
         return false;
 
-    static const float minimumAttachedHeight = 250;
-    static const float maximumAttachedHeightRatio = 0.75;
-    static const float minimumAttachedWidth = 500;
+    static constexpr CGFloat minimumAttachedHeight = 250;
+    static constexpr CGFloat maximumAttachedHeightRatio = 0.75;
+    static constexpr CGFloat minimumAttachedWidth = 500;
+    RetainPtr parent = [inspectedView superview];
+    NSRect allocation = m_isAttached && parent ? parent.get().bounds : inspectedView.get().frame;
+    return minimumAttachedHeight <= NSHeight(allocation) * maximumAttachedHeightRatio && minimumAttachedWidth <= NSWidth(allocation);
+}
 
-    NSRect inspectedViewFrame = inspectedView.get().frame;
+bool WebInspectorUIProxy::platformCanAttachToSide(AttachmentSide side)
+{
+    if (side == AttachmentSide::Bottom)
+        return true;
 
-    float maximumAttachedHeight = NSHeight(inspectedViewFrame) * maximumAttachedHeightRatio;
-    return minimumAttachedHeight <= maximumAttachedHeight && minimumAttachedWidth <= NSWidth(inspectedViewFrame);
+    RefPtr inspectedPage = m_inspectedPage.get();
+    if (!inspectedPage)
+        return false;
+
+    RetainPtr inspectedView = inspectedPage->inspectorAttachmentView();
+    RetainPtr parent = [inspectedView superview];
+    NSRect allocation = parent ? parent.get().bounds : inspectedView.get().frame;
+    return InspectorFrontendClientLocal::canAttachWindowToSide(NSWidth(allocation));
 }
 
 void WebInspectorUIProxy::platformAttachAvailabilityChanged(bool available)
@@ -1165,12 +1234,24 @@ void WebInspectorUIProxy::inspectedViewFrameDidChange(CGFloat currentDimension)
 
     RetainPtr inspectedView = inspectedPage->inspectorAttachmentView();
     RetainPtr<WKWebView> inspectorView = [m_inspectorViewController webView];
+    RetainPtr attachmentContainer = m_inspectorDockView;
+    RetainPtr parent = [inspectedView superview];
+    if (!attachmentContainer || !parent)
+        return;
 
     NSRect inspectedViewFrame = inspectedView.get().frame;
-    NSRect oldInspectorViewFrame = inspectorView.get().frame;
+    NSRect oldInspectorViewFrame = attachmentContainer.get().frame;
     NSRect newInspectorViewFrame = NSZeroRect;
-    NSRect parentBounds = inspectedView.get().superview.bounds;
+    NSRect parentBounds = parent.get().bounds;
     CGFloat inspectedViewTop = NSMaxY(inspectedViewFrame);
+
+    if (m_attachmentSide != AttachmentSide::Bottom && !InspectorFrontendClientLocal::canAttachWindowToSide(NSWidth(parentBounds))) {
+        if (platformCanAttach(canAttach()))
+            attachWithPreference(AttachmentSide::Bottom, false);
+        else
+            detachWithPreference(false);
+        return;
+    }
 
     auto frameAdjustedForContentLayoutRect = [&](NSRect frameIgnoringContentLayoutRect) {
 #if ENABLE(CONTENT_INSET_BACKGROUND_FILL)
@@ -1238,7 +1319,7 @@ void WebInspectorUIProxy::inspectedViewFrameDidChange(CGFloat currentDimension)
     [retainPtr(inspectorView.get().window) disableScreenUpdatesUntilFlush];
     ALLOW_DEPRECATED_DECLARATIONS_END
 
-    [inspectorView setFrame:newInspectorViewFrame];
+    [attachmentContainer setFrame:newInspectorViewFrame];
     [inspectedView setFrame:inspectedViewFrame];
 }
 
@@ -1255,6 +1336,7 @@ void WebInspectorUIProxy::platformAttach()
     }
 
     [inspectorView removeFromSuperview];
+    [m_inspectorDockView removeFromSuperview];
 
     if (RetainPtr attachmentContainerView = m_attachmentContainerView.get(); attachmentContainerView && ![attachmentContainerView isWrappingInspectedView:inspectedView.get()])
         unwrapInspectedView(m_attachmentContainerView);
@@ -1263,25 +1345,27 @@ void WebInspectorUIProxy::platformAttach()
         m_attachmentContainerView = attachmentContainerView.get();
     }
 
+    m_inspectorDockView = adoptNS([[WKQuickieInspectorDockView alloc] initWithWebView:inspectorView.get()]);
+
     CGFloat currentDimension;
     switch (m_attachmentSide) {
     case AttachmentSide::Bottom:
-        [inspectorView setAutoresizingMask:NSViewWidthSizable | NSViewMaxYMargin];
+        [m_inspectorDockView setAutoresizingMask:NSViewWidthSizable | NSViewMaxYMargin];
         currentDimension = protect(inspectorPagePreferences())->inspectorAttachedHeight();
         break;
     case AttachmentSide::Right:
-        [inspectorView setAutoresizingMask:NSViewHeightSizable | NSViewMinXMargin];
+        [m_inspectorDockView setAutoresizingMask:NSViewHeightSizable | NSViewMinXMargin];
         currentDimension = protect(inspectorPagePreferences())->inspectorAttachedWidth();
         break;
     case AttachmentSide::Left:
-        [inspectorView setAutoresizingMask:NSViewHeightSizable | NSViewMaxXMargin];
+        [m_inspectorDockView setAutoresizingMask:NSViewHeightSizable | NSViewMaxXMargin];
         currentDimension = protect(inspectorPagePreferences())->inspectorAttachedWidth();
         break;
     }
 
     inspectedViewFrameDidChange(currentDimension);
 
-    [retainPtr(inspectedView.get().superview) addSubview:inspectorView.get() positioned:NSWindowBelow relativeTo:inspectedView.get()];
+    [retainPtr(inspectedView.get().superview) addSubview:m_inspectorDockView.get() positioned:NSWindowBelow relativeTo:inspectedView.get()];
     [retainPtr(inspectorView.get().window) makeFirstResponder:inspectorView.get()];
 
     [m_inspectorViewController didAttachOrDetach];
@@ -1294,6 +1378,8 @@ void WebInspectorUIProxy::platformDetach()
     RetainPtr<WKWebView> inspectorView = [m_inspectorViewController webView];
 
     [inspectorView removeFromSuperview];
+    [m_inspectorDockView removeFromSuperview];
+    m_inspectorDockView = nil;
     [inspectorView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
 
     if (!unwrapInspectedView(m_attachmentContainerView) && inspectedView) {
@@ -1314,20 +1400,24 @@ void WebInspectorUIProxy::platformDetach()
 
 void WebInspectorUIProxy::platformSetAttachedWindowHeight(unsigned height)
 {
-    if (!m_isAttached)
+    if (!m_isAttached || m_attachmentSide != AttachmentSide::Bottom)
         return;
 
     NSEdgeInsets webViewInsets = [m_inspectorViewController webView].safeAreaInsets;
-    inspectedViewFrameDidChange(height + webViewInsets.top + webViewInsets.bottom);
+    unsigned allocation = height + 2 * InspectorFrontendClientLocal::attachedWindowInset;
+    protect(inspectorPagePreferences())->setInspectorAttachedHeight(allocation);
+    inspectedViewFrameDidChange(allocation + webViewInsets.top + webViewInsets.bottom);
 }
 
 void WebInspectorUIProxy::platformSetAttachedWindowWidth(unsigned width)
 {
-    if (!m_isAttached)
+    if (!m_isAttached || m_attachmentSide == AttachmentSide::Bottom)
         return;
 
     NSEdgeInsets webViewInsets = [m_inspectorViewController webView].safeAreaInsets;
-    inspectedViewFrameDidChange(width + webViewInsets.left + webViewInsets.right);
+    unsigned allocation = width + 2 * InspectorFrontendClientLocal::attachedWindowInset;
+    protect(inspectorPagePreferences())->setInspectorAttachedWidth(allocation);
+    inspectedViewFrameDidChange(allocation + webViewInsets.left + webViewInsets.right);
 }
 
 void WebInspectorUIProxy::platformSetSheetRect(const FloatRect& rect)

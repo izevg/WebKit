@@ -114,6 +114,10 @@ public:
 
     WEBCORE_EXPORT static unsigned constrainedAttachedWindowHeight(unsigned preferredHeight, unsigned totalWindowHeight);
     WEBCORE_EXPORT static unsigned constrainedAttachedWindowWidth(unsigned preferredWidth, unsigned totalWindowWidth);
+#if PLATFORM(MAC)
+    static constexpr unsigned attachedWindowInset = 12;
+    WEBCORE_EXPORT static bool canAttachWindowToSide(unsigned totalWindowWidth);
+#endif
 
     // Direct Frontend API
     WEBCORE_EXPORT bool isDebuggingEnabled();

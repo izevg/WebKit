@@ -65,6 +65,34 @@ WI.StorageTabContentView = class StorageTabContentView extends WI.ContentBrowser
         return true;
     }
 
+    attached()
+    {
+        super.attached();
+        this._updateCompactNavigation();
+    }
+
+    detached()
+    {
+        if (this._compactNavigation) {
+            this._compactNavigation = false;
+            document.body.classList.remove("compact-storage");
+        }
+        super.detached();
+    }
+
+    sizeDidChange()
+    {
+        super.sizeDidChange();
+        this._updateCompactNavigation();
+    }
+
+    showNavigationSidebarPanel()
+    {
+        super.showNavigationSidebarPanel();
+        if (this.isAttached && this._compactNavigation)
+            WI.navigationSidebar.collapsed = true;
+    }
+
     canShowRepresentedObject(representedObject)
     {
         return representedObject instanceof WI.CookieStorageObject
@@ -90,6 +118,30 @@ WI.StorageTabContentView = class StorageTabContentView extends WI.ContentBrowser
         WI.indexedDBManager.disable();
 
         super.closed();
+    }
+
+    // Private
+
+    _updateCompactNavigation()
+    {
+        if (!this.isAttached || WI.Platform.name !== "mac")
+            return;
+
+        let compact = window.innerWidth < 520;
+        if (!!this._compactNavigation === compact)
+            return;
+
+        this._compactNavigation = compact;
+        document.body.classList.toggle("compact-storage", compact);
+        this.showNavigationSidebarPanel();
+    }
+
+    _navigationSidebarCollapsedStateDidChange(event)
+    {
+        let previousIgnoreState = this._ignoreNavigationSidebarPanelCollapsedEvent;
+        this._ignoreNavigationSidebarPanelCollapsedEvent ||= !!this._compactNavigation;
+        super._navigationSidebarCollapsedStateDidChange(event);
+        this._ignoreNavigationSidebarPanelCollapsedEvent = previousIgnoreState;
     }
 };
 

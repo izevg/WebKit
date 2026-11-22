@@ -320,18 +320,29 @@ void WebInspectorUIProxy::attachLeft()
 
 void WebInspectorUIProxy::attach(AttachmentSide side)
 {
+    attachWithPreference(side, true);
+}
+
+void WebInspectorUIProxy::attachWithPreference(AttachmentSide side, bool persist)
+{
     ASSERT(m_inspectorPage);
     if (!m_inspectedPage || !m_inspectorPage || (!m_isAttached && !platformCanAttach(m_canAttach)))
         return;
 
+#if PLATFORM(MAC)
+    if (!platformCanAttachToSide(side))
+        return;
+#endif
+
     m_isAttached = true;
     m_attachmentSide = side;
 
-    Ref preferences = inspectorPagePreferences();
-    preferences->setInspectorAttachmentSide(static_cast<uint32_t>(side));
-
-    if (m_isVisible)
-        preferences->setInspectorStartsAttached(true);
+    if (persist) {
+        Ref preferences = inspectorPagePreferences();
+        preferences->setInspectorAttachmentSide(static_cast<uint32_t>(side));
+        if (m_isVisible)
+            preferences->setInspectorStartsAttached(true);
+    }
 
     protect(protect(inspectedPage())->legacyMainFrameProcess())->send(Messages::WebInspectorBackend::SetAttached(true), m_inspectedPage->webPageIDInMainFrameProcess());
 
@@ -356,12 +367,17 @@ void WebInspectorUIProxy::attach(AttachmentSide side)
 
 void WebInspectorUIProxy::detach()
 {
+    detachWithPreference(true);
+}
+
+void WebInspectorUIProxy::detachWithPreference(bool persist)
+{
     if (!m_inspectedPage || !m_inspectorPage || (!m_isAttached && m_isVisible))
         return;
 
     m_isAttached = false;
 
-    if (m_isVisible)
+    if (m_isVisible && persist)
         protect(inspectorPagePreferences())->setInspectorStartsAttached(false);
 
     protect(protect(inspectedPage())->legacyMainFrameProcess())->send(Messages::WebInspectorBackend::SetAttached(false), m_inspectedPage->webPageIDInMainFrameProcess());
@@ -378,7 +394,9 @@ void WebInspectorUIProxy::setAttachedWindowHeight(unsigned height)
     if (!m_inspectorPage)
         return;
 
+#if !PLATFORM(MAC)
     protect(inspectorPagePreferences())->setInspectorAttachedHeight(height);
+#endif
     platformSetAttachedWindowHeight(height);
 }
 
@@ -388,7 +406,9 @@ void WebInspectorUIProxy::setAttachedWindowWidth(unsigned width)
     if (!m_inspectorPage)
         return;
 
+#if !PLATFORM(MAC)
     protect(inspectorPagePreferences())->setInspectorAttachedWidth(width);
+#endif
     platformSetAttachedWindowWidth(width);
 }
 
@@ -513,6 +533,10 @@ void WebInspectorUIProxy::openLocalInspectorFrontend()
         m_canAttach = platformCanAttach(webProcessCanAttach);
         m_isAttached = shouldOpenAttached();
         m_attachmentSide = static_cast<AttachmentSide>(protect(inspectorPagePreferences())->inspectorAttachmentSide());
+#if PLATFORM(MAC)
+        if (m_isAttached && !platformCanAttachToSide(m_attachmentSide))
+            m_attachmentSide = AttachmentSide::Bottom;
+#endif
 
         protect(inspectedPage->legacyMainFrameProcess())->send(Messages::WebInspectorBackend::SetAttached(m_isAttached), inspectedPage->webPageIDInMainFrameProcess());
 
@@ -568,6 +592,19 @@ void WebInspectorUIProxy::open()
 
     m_isVisible = true;
     protect(protect(inspectorPage())->legacyMainFrameProcess())->send(Messages::WebInspectorUI::SetIsVisible(m_isVisible), m_inspectorPage->webPageIDInMainFrameProcess());
+
+#if PLATFORM(MAC)
+    if (m_isAttached && !platformCanAttach(m_canAttach)) {
+        detachWithPreference(false);
+        return;
+    }
+
+    if (m_isAttached && !platformCanAttachToSide(m_attachmentSide)) {
+        attachWithPreference(AttachmentSide::Bottom, false);
+        platformBringToFront();
+        return;
+    }
+#endif
 
     if (m_isAttached && platformCanAttach(m_canAttach))
         platformAttach();

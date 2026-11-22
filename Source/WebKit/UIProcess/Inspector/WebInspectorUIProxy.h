@@ -262,6 +262,8 @@ private:
     void platformShowCertificate(const WebCore::CertificateInfo&);
     void platformAttach();
     void platformDetach();
+    void attachWithPreference(AttachmentSide, bool persist);
+    void detachWithPreference(bool persist);
     void platformSetAttachedWindowHeight(unsigned);
     void platformSetAttachedWindowWidth(unsigned);
     NODELETE void platformSetSheetRect(const WebCore::FloatRect&);
@@ -277,6 +279,9 @@ private:
     bool platformCanAttach(bool) { return false; }
 #else
     bool platformCanAttach(bool webProcessCanAttach) { return webProcessCanAttach; }
+#endif
+#if PLATFORM(MAC)
+    bool platformCanAttachToSide(AttachmentSide);
 #endif
 
     // Called by WebInspectorBackendProxy and WebInspectorUIProxy messages
@@ -359,6 +364,7 @@ private:
 
 #if PLATFORM(MAC)
     RetainPtr<WKInspectorViewController> m_inspectorViewController;
+    RetainPtr<NSView> m_inspectorDockView;
     RetainPtr<NSWindow> m_inspectorWindow;
     RetainPtr<WKWebInspectorUIProxyObjCAdapter> m_objCAdapter;
     // The container is owned by the view hierarchy, and it retains the inspected view.

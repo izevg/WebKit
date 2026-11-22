@@ -156,7 +156,8 @@ InspectorFrontendAPI = {
             WI.AuditTabContentView,
         ];
 
-        let tabClass = tabClasses.find((tabClass) => tabClass.Type === tabType);
+        let showHeapAllocations = tabType === "heap-allocations";
+        let tabClass = showHeapAllocations ? WI.TimelineTabContentView : tabClasses.find((tabClass) => tabClass.Type === tabType);
         if (!tabClass || !tabClass.isTabAllowed())
             return;
 
@@ -164,6 +165,9 @@ InspectorFrontendAPI = {
         WI.tabBrowser.showTabForContentView(tabContentView, {
             initiatorHint: WI.TabBrowser.TabNavigationInitiator.FrontendAPI,
         });
+
+        if (showHeapAllocations)
+            tabContentView.showHeapAllocations();
     },
 
     // COMPATIBILITY (iOS 13): merged into InspectorFrontendAPI.setTimelineProfilingEnabled.

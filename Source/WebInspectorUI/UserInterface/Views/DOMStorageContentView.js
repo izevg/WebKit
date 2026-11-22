@@ -52,6 +52,8 @@ WI.DOMStorageContentView = class DOMStorageContentView extends WI.ContentView
         this._dataGrid.allowsMultipleSelection = true;
         this._dataGrid.createSettings("dom-storage-content-view");
         this._dataGrid.addEventListener(WI.DataGrid.Event.SortChanged, this._sortDataGrid, this);
+        if (WI.Platform.name === "mac")
+            this._dataGrid.addEventListener(WI.DataGrid.Event.SelectedNodeChanged, this._updateValuePreview, this);
         this.addSubview(this._dataGrid);
 
         this._filterBarNavigationItem = new WI.FilterBarNavigationItem;
@@ -158,9 +160,68 @@ WI.DOMStorageContentView = class DOMStorageContentView extends WI.ContentView
             }
         }
         this._sortDataGrid();
+        if (WI.Platform.name === "mac")
+            this._updateValuePreview();
     }
 
     // Private
+
+    _selectedStorageValue()
+    {
+        let node = this._dataGrid.selectedNode;
+        if (!node || node.isPlaceholderNode)
+            return null;
+
+        return this.representedObject.entries.get(node.__originalKey ?? node.data.key) ?? node.data.value;
+    }
+
+    _updateValuePreview()
+    {
+        let value = this._selectedStorageValue();
+        if (typeof value !== "string") {
+            if (this.element.classList.contains("showing-value-preview")) {
+                this.element.classList.remove("showing-value-preview");
+                this.needsLayout(WI.View.LayoutReason.Resize);
+            }
+            return;
+        }
+        this.element.classList.add("showing-value-preview");
+
+        if (!this._valuePreview) {
+            this._valuePreview = new WI.View;
+            this._valuePreview.element.classList.add("storage-value-preview");
+            this._valuePreview.element.setAttribute("role", "region");
+            this._valuePreview.element.setAttribute("aria-label", WI.UIString("Selected storage value"));
+
+            let header = this._valuePreview.element.appendChild(document.createElement("div"));
+            header.className = "storage-value-preview-header";
+            this._valuePreviewLabel = header.appendChild(document.createElement("span"));
+
+            let copyButton = header.appendChild(document.createElement("button"));
+            copyButton.textContent = WI.UIString("Copy Value");
+            copyButton.addEventListener("click", () => {
+                let value = this._selectedStorageValue();
+                if (typeof value === "string")
+                    InspectorFrontendHost.copyText(value);
+            });
+
+            this._valuePreviewEditor = new WI.TextEditor;
+            this._valuePreviewEditor.readOnly = true;
+            this._valuePreview.addSubview(this._valuePreviewEditor);
+            this.addSubview(this._valuePreview);
+        }
+
+        const previewLimit = 32768;
+        let preview = value.slice(0, previewLimit);
+        this._valuePreviewEditor.mimeType = /^\s*[\[{]/.test(preview) ? "application/json" : "text/plain";
+        this._valuePreviewEditor.string = preview;
+        if (value.length > previewLimit)
+            this._valuePreviewLabel.textContent = WI.UIString("Value preview truncated");
+        else
+            this._valuePreviewLabel.textContent = value.length ? WI.UIString("Value") : WI.UIString("Empty value");
+
+        this.needsLayout(WI.View.LayoutReason.Resize);
+    }
 
     _truncateValue(value)
     {
@@ -222,7 +283,7 @@ WI.DOMStorageContentView = class DOMStorageContentView extends WI.ContentView
     _afterEditCallback(editingNode, columnIdentifier, oldText, newText, moveDirection)
     {
         var key = editingNode.data["key"].trim().removeWordBreakCharacters();
-        var value = editingNode.data["displayValue"].trim().removeWordBreakCharacters();
+        var value = columnIdentifier === "key" ? editingNode.data.value : editingNode.data["displayValue"].trim().removeWordBreakCharacters();
         var previousValue = oldText.trim().removeWordBreakCharacters();
         var enteredValue = newText.trim().removeWordBreakCharacters();
         var hasUncommittedEdits = editingNode.__hasUncommittedEdits;
@@ -235,6 +296,8 @@ WI.DOMStorageContentView = class DOMStorageContentView extends WI.ContentView
             editingNode.data.value = value;
             editingNode.data.displayValue = this._truncateValue(value);
             editingNode.needsRefresh();
+            if (WI.Platform.name === "mac")
+                this._updateValuePreview();
         }
 
         // Nothing changed, just bail.
