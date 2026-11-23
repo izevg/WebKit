@@ -64,6 +64,7 @@
 #import "WebDataListSuggestionsDropdownMac.h"
 #import "WebDateTimePickerMac.h"
 #import "WebEditCommandProxy.h"
+#import "WebFullScreenManagerProxy.h"
 #import "WebPageProxy.h"
 #import "WebPopupMenuProxyMac.h"
 #import "WebPreferences.h"
@@ -921,6 +922,13 @@ bool PageClientImpl::everMagnifiedDuringCurrentGesture() const
 
 #if ENABLE(FULLSCREEN_API)
 
+// Hosts can keep native element fullscreen inside their existing WKWebView.
+static bool prefersFullscreenInView()
+{
+    id preference = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"QuickieFullscreenInView"];
+    return [preference isKindOfClass:[NSNumber class]] && [preference boolValue];
+}
+
 WebFullScreenManagerProxyClient& PageClientImpl::fullScreenManagerProxyClient()
 {
     if (m_fullscreenClientForTesting)
@@ -932,12 +940,21 @@ WebFullScreenManagerProxyClient& PageClientImpl::fullScreenManagerProxyClient()
 
 void PageClientImpl::closeFullScreenManager()
 {
+    if (prefersFullscreenInView()) {
+        if (RefPtr manager = m_impl->page().fullScreenManager(); manager && manager->fullscreenState() != WebFullScreenManagerProxy::FullscreenState::NotInFullscreen)
+            manager->requestExitFullScreen();
+        return;
+    }
     protect(m_impl)->closeFullScreenWindowController();
 }
 
 bool PageClientImpl::isFullScreen()
 {
     CheckedRef impl = *m_impl;
+    if (prefersFullscreenInView()) {
+        RefPtr manager = impl->page().fullScreenManager();
+        return manager && manager->fullscreenState() != WebFullScreenManagerProxy::FullscreenState::NotInFullscreen;
+    }
     if (!impl->hasFullScreenWindowController())
         return false;
 
@@ -946,6 +963,9 @@ bool PageClientImpl::isFullScreen()
 
 void PageClientImpl::enterFullScreen(FloatSize, CompletionHandler<void(bool)>&& completionHandler)
 {
+    if (prefersFullscreenInView())
+        return completionHandler(!![webView() window]);
+
     CheckedRef impl = *m_impl;
     if (RetainPtr fullScreenWindowController = impl->fullScreenWindowController())
         [fullScreenWindowController enterFullScreen:WTF::move(completionHandler)];
@@ -955,6 +975,9 @@ void PageClientImpl::enterFullScreen(FloatSize, CompletionHandler<void(bool)>&& 
 
 void PageClientImpl::exitFullScreen(CompletionHandler<void()>&& completionHandler)
 {
+    if (prefersFullscreenInView())
+        return completionHandler();
+
     CheckedRef impl = *m_impl;
     if (RetainPtr fullScreenWindowController = impl->fullScreenWindowController())
         [fullScreenWindowController exitFullScreen:WTF::move(completionHandler)];
@@ -965,6 +988,10 @@ void PageClientImpl::exitFullScreen(CompletionHandler<void()>&& completionHandle
 void PageClientImpl::beganEnterFullScreen(const IntRect& initialFrame, const IntRect& finalFrame, CompletionHandler<void(bool)>&& completionHandler)
 {
     CheckedRef impl = *m_impl;
+    if (prefersFullscreenInView()) {
+        impl->updateSupportsArbitraryLayoutModes();
+        return completionHandler(!![webView() window]);
+    }
     if (RetainPtr fullScreenWindowController = impl->fullScreenWindowController())
         [fullScreenWindowController beganEnterFullScreenWithInitialFrame:initialFrame finalFrame:finalFrame completionHandler:WTF::move(completionHandler)];
     else
@@ -976,6 +1003,10 @@ void PageClientImpl::beganEnterFullScreen(const IntRect& initialFrame, const Int
 void PageClientImpl::beganExitFullScreen(const IntRect& initialFrame, const IntRect& finalFrame, CompletionHandler<void()>&& completionHandler)
 {
     CheckedRef impl = *m_impl;
+    if (prefersFullscreenInView()) {
+        impl->updateSupportsArbitraryLayoutModes();
+        return completionHandler();
+    }
     if (RetainPtr fullScreenWindowController = impl->fullScreenWindowController()) {
         [fullScreenWindowController beganExitFullScreenWithInitialFrame:initialFrame finalFrame:finalFrame completionHandler:WTF::move(completionHandler)];
         impl->updateSupportsArbitraryLayoutModes();
@@ -985,6 +1016,9 @@ void PageClientImpl::beganExitFullScreen(const IntRect& initialFrame, const IntR
 
 WebCore::IntRect PageClientImpl::convertMainFrameCoordinatesInFullscreenPlaceholderViewToScreen(WebPageProxy& page, WebCore::IntRect mainFrameCoordinates) const
 {
+    if (prefersFullscreenInView())
+        return page.syncRootViewToScreen(mainFrameCoordinates);
+
     if (RetainPtr fullScreenWindowController = protect(m_impl)->fullScreenWindowController()) {
         if (auto screenCoordinates = [fullScreenWindowController convertMainFrameCoordinatesInFullscreenPlaceholderViewToScreen:mainFrameCoordinates])
             return *screenCoordinates;
