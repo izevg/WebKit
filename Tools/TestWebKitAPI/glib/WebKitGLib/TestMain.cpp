@@ -22,6 +22,7 @@
 
 #include <glib/gstdio.h>
 #include <wtf/FileSystem.h>
+#include <wtf/glib/Sandbox.h>
 
 #if PLATFORM(GTK)
 #include <gtk/gtk.h>
@@ -133,7 +134,18 @@ static void parseWPEArgs(int argc, char** argv)
 
 int main(int argc, char** argv)
 {
-    g_unsetenv("DBUS_SESSION_BUS_ADDRESS");
+    bool useSandbox = !g_strcmp0(g_getenv("WEBKIT_TESTS_ENABLE_SANDBOX"), "1");
+    if (useSandbox) {
+#if PLATFORM(GTK) && USE(GTK4) && ENABLE(BUBBLEWRAP_SANDBOX)
+        if (!shouldUseBubblewrap())
+            g_error("Bubblewrap is unavailable in this test environment");
+#else
+        g_error("Sandboxed API tests require GTK4 with bubblewrap support");
+#endif
+        if (g_getenv("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS"))
+            g_error("Unset WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS for sandboxed API tests");
+    } else
+        g_unsetenv("DBUS_SESSION_BUS_ADDRESS");
 #if PLATFORM(GTK)
     gtk_test_init(&argc, &argv, nullptr);
 #else
@@ -147,8 +159,8 @@ int main(int argc, char** argv)
     g_setenv("WEBKIT_EXEC_PATH", WEBKIT_EXEC_PATH, FALSE);
     g_setenv("WEBKIT_INJECTED_BUNDLE_PATH", WEBKIT_INJECTED_BUNDLE_PATH, FALSE);
     g_setenv("WEBKIT_INSPECTOR_RESOURCES_PATH", WEBKIT_INSPECTOR_RESOURCES_PATH, FALSE);
-    // Sandbox requires using GApplication.
-    g_setenv("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1", TRUE);
+    if (!useSandbox)
+        g_setenv("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1", TRUE);
     g_setenv("LC_ALL", "C", TRUE);
     g_setenv("GIO_USE_VFS", "local", TRUE);
     g_setenv("GSETTINGS_BACKEND", "memory", TRUE);
