@@ -975,20 +975,6 @@ static Ref<API::PageConfiguration> webkitWebViewCreatePageConfiguration(WebKitWe
 #endif
     auto& dataStore = webkitWebsiteDataManagerGetDataStore(manager);
     pageConfiguration->setWebsiteDataStore(&dataStore);
-#if ENABLE(WK_WEB_EXTENSIONS) && PLATFORM(GTK)
-    if (priv->webExtensionController) {
-        auto controller = webkitWebExtensionControllerForDataStore(priv->webExtensionController.get(), dataStore);
-        if (controller)
-            pageConfiguration->setWebExtensionController(WTF::move(controller));
-        else {
-            g_warning("The web extension controller belongs to a different network session");
-            priv->webExtensionController = nullptr;
-        }
-    }
-    if (priv->userContentManager)
-        scopeUserContentManagerToExtensions(priv->userContentManager, priv->webExtensionController.get());
-#endif
-    pageConfiguration->setUserContentController(priv->userContentManager ? webkitUserContentManagerGetUserContentControllerProxy(priv->userContentManager.get()) : nullptr);
 
     pageConfiguration->setDefaultWebsitePolicies(webkitWebsitePoliciesGetWebsitePolicies(priv->websitePolicies.get()));
 
@@ -1047,6 +1033,9 @@ static void webkitWebViewConstructed(GObject* object)
         if (priv->isControlledByAutomation)
             g_critical("WebKitWebView is-controlled-by-automation can't be set when related-view is set too, passed is-controlled-by-automation value is ignored.");
         priv->isControlledByAutomation = webkit_web_view_is_controlled_by_automation(priv->relatedView);
+#if ENABLE(WK_WEB_EXTENSIONS) && PLATFORM(GTK)
+        priv->webExtensionController = priv->relatedView->priv->webExtensionController;
+#endif
     } else if (!priv->context)
         priv->context = webkit_web_context_get_default();
 #if !ENABLE(2022_GLIB_API)
@@ -1116,15 +1105,24 @@ static void webkitWebViewConstructed(GObject* object)
     if (priv->relatedView)
         relatedConfiguration = std::exchange(priv->relatedView->priv->configurationForNextRelatedView, nullptr);
 
-    if (relatedConfiguration) {
-        if (priv->userContentManager)
-            relatedConfiguration->setUserContentController(webkitUserContentManagerGetUserContentControllerProxy(priv->userContentManager.get()));
-        else
+    if (!priv->userContentManager) {
+        if (relatedConfiguration)
             priv->userContentManager = webkit_web_view_get_user_content_manager(priv->relatedView);
-    } else if (!priv->userContentManager)
-        priv->userContentManager = adoptGRef(webkit_user_content_manager_new());
+        else
+            priv->userContentManager = adoptGRef(webkit_user_content_manager_new());
+    }
 
     Ref configuration = relatedConfiguration ? relatedConfiguration.releaseNonNull() : webkitWebViewCreatePageConfiguration(webView);
+#if ENABLE(WK_WEB_EXTENSIONS) && PLATFORM(GTK)
+    RefPtr extensionController = priv->webExtensionController ? webkitWebExtensionControllerForDataStore(priv->webExtensionController.get(), configuration->websiteDataStore()) : nullptr;
+    if (priv->webExtensionController && !extensionController) {
+        g_warning("The web extension controller belongs to a different network session");
+        priv->webExtensionController = nullptr;
+    }
+    configuration->setWebExtensionController(WTF::move(extensionController));
+    scopeUserContentManagerToExtensions(priv->userContentManager, priv->webExtensionController.get());
+#endif
+    configuration->setUserContentController(webkitUserContentManagerGetUserContentControllerProxy(priv->userContentManager.get()));
     webkitWebViewCreatePage(webView, WTF::move(configuration));
     webkitWebContextWebViewCreated(priv->context.get(), webView);
 
@@ -2051,6 +2049,8 @@ static void webkit_web_view_class_init(WebKitWebViewClass* webViewClass)
      * WebKitWebView:web-extension-controller:
      *
      * The controller for extension content in this view's network session.
+     * A view created with #WebKitWebView:related-view uses the related view's
+     * controller in place of this property's supplied value.
      * Views with different extension controllers cannot share a user content manager.
      * A conflicting manager is replaced with a fresh manager.
      *

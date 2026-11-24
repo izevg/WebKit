@@ -487,6 +487,51 @@ static void testGrantedContentWorld(WebViewTest* test, gconstpointer)
     GRefPtr lateForeignView = makeForeignView();
     checkPage(lateForeignView.get(), allowedPage, false);
 
+    auto* openerManager = webkit_web_view_get_user_content_manager(webView.get());
+    auto* foreignManager = webkit_web_view_get_user_content_manager(earlyForeignView.get());
+    GRefPtr relatedView = adoptGRef(WEBKIT_WEB_VIEW(g_object_ref_sink(g_object_new(WEBKIT_TYPE_WEB_VIEW,
+        "related-view", webView.get(),
+        "web-extension-controller", secondController.get(),
+        "user-content-manager", foreignManager,
+        nullptr))));
+    g_assert_true(webkit_web_view_get_network_session(relatedView.get()) == session.get());
+    g_assert_true(webkit_web_view_get_user_content_manager(relatedView.get()) != foreignManager);
+    checkPage(relatedView.get(), allowedPage, true);
+
+    auto openPopup = [&](WebKitWebView* opener, WebKitWebExtensionController* controller, WebKitUserContentManager* manager) {
+        struct PopupData {
+            WebKitWebExtensionController* controller;
+            WebKitUserContentManager* manager;
+            WebKitWebView* view { nullptr };
+        } data { controller, manager };
+        auto handler = g_signal_connect(opener, "create", G_CALLBACK(+[](WebKitWebView* opener, WebKitNavigationAction*, PopupData* data) -> WebKitWebView* {
+            data->view = WEBKIT_WEB_VIEW(g_object_ref_sink(g_object_new(WEBKIT_TYPE_WEB_VIEW,
+                "related-view", opener,
+                "web-extension-controller", data->controller,
+                "user-content-manager", data->manager,
+                nullptr)));
+            return data->view;
+        }), &data);
+        webkit_settings_set_javascript_can_open_windows_automatically(webkit_web_view_get_settings(opener), TRUE);
+        auto* opened = test->runJavaScriptAndWaitUntilFinished("window.open() !== null", &error.outPtr(), opener);
+        g_signal_handler_disconnect(opener, handler);
+        g_assert_no_error(error.get());
+        g_assert_true(WebViewTest::javascriptResultToBoolean(opened));
+        g_assert_nonnull(data.view);
+        return adoptGRef(data.view);
+    };
+
+    auto relatedPopup = openPopup(webView.get(), secondController.get(), foreignManager);
+    g_assert_true(webkit_web_view_get_network_session(relatedPopup.get()) == session.get());
+    g_assert_true(webkit_web_view_get_user_content_manager(relatedPopup.get()) != foreignManager);
+    checkPage(relatedPopup.get(), allowedPage, true);
+
+    auto foreignPopup = openPopup(earlyForeignView.get(), controller.get(), openerManager);
+    g_assert_true(webkit_web_view_get_network_session(foreignPopup.get()) == secondSession.get());
+    g_assert_true(webkit_web_view_get_user_content_manager(foreignPopup.get()) != openerManager);
+    checkPage(foreignPopup.get(), allowedPage, false);
+    checkPage(earlyForeignView.get(), allowedPage, false);
+
     const char* secureHosts[] = { "https://*/*", "https://127.0.0.1/fixture/granted/*", nullptr };
     g_assert_true(webkit_web_extension_context_set_granted_hosts(context.get(), secureHosts, &error.outPtr()));
     g_assert_no_error(error.get());
