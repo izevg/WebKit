@@ -26,9 +26,11 @@
 #include <wtf/CompletionHandler.h>
 #include <wtf/Forward.h>
 #include <wtf/HashMap.h>
+#include <wtf/Ref.h>
 #include <wtf/RefCounted.h>
 #include <wtf/glib/GRefPtr.h>
 #include <wtf/glib/WTFGType.h>
+#include <wtf/text/CString.h>
 #include <wtf/text/UTF8CStringView.h>
 #include <wtf/text/WTFString.h>
 
@@ -43,7 +45,6 @@ public:
     GRefPtr<GVariant> getProperty(ASCIILiteral name);
 
     using ResponseCallback = CompletionHandler<void(GVariant*)>;
-    void waitResponseSignal(UTF8CStringView objectPath, ResponseCallback&& = [](auto*) { });
 
     void notifyResponse(GVariant* parameters);
 
@@ -75,26 +76,28 @@ public:
 
     class ScreencastSession {
     public:
-        ScreencastSession(String&& path, const GRefPtr<GDBusProxy>& proxy)
+        ScreencastSession(String&& path, ASCIICString&& owner, DesktopPortalScreenCast& portal)
             : m_path(WTF::move(path))
-            , m_proxy(proxy)
+            , m_owner(WTF::move(owner))
+            , m_portal(portal)
         {
         }
-        const String& path() const LIFETIME_BOUND { return m_path; }
         GRefPtr<GVariant> selectSources(GVariantBuilder&);
         GRefPtr<GVariant> start();
         std::optional<PipeWireNodeData> openPipewireRemote();
+        void close();
 
     private:
         String m_path;
-        const GRefPtr<GDBusProxy>& m_proxy;
+        ASCIICString m_owner;
+        Ref<DesktopPortalScreenCast> m_portal;
     };
 
     std::optional<ScreencastSession> createScreencastSession();
-    void closeSession(const String& path);
-
 private:
     DesktopPortalScreenCast(ASCIILiteral, GRefPtr<GDBusProxy>&&);
+    ASCIICString currentOwner() const;
+    GRefPtr<GVariant> request(const ASCIICString& owner, ASCIILiteral method, const String& token, GVariant* parameters, bool* explicitlyRejected = nullptr);
 };
 
 } // namespace WebCore

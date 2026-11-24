@@ -86,6 +86,8 @@ public:
     }
 private:
     DisplayCaptureManager& displayCaptureDeviceManager() final { return GStreamerDisplayCaptureDeviceManager::singleton(); }
+    // Creating a real display source opens the system picker.
+    bool validateSourceConstraintsBeforePermission() const final { return false; }
 };
 
 CaptureSourceOrError GStreamerVideoCaptureSource::create(String&& deviceID, MediaDeviceHashSalts&& hashSalts, const MediaConstraints* constraints)
@@ -153,17 +155,23 @@ GStreamerVideoCaptureSource::GStreamerVideoCaptureSource(GStreamerCaptureDevice&
 GStreamerVideoCaptureSource::~GStreamerVideoCaptureSource()
 {
     m_capturer->removeObserver(*this);
-    if (!m_capturer->pipeline())
-        return;
-    m_capturer->stop();
-
-    if (m_capturer->isCapturingDisplay()) {
-        auto& manager = GStreamerDisplayCaptureDeviceManager::singleton();
-        manager.stopSource(persistentID());
-    }
+    if (m_capturer->pipeline())
+        m_capturer->stop();
 
     auto& singleton = GStreamerVideoCaptureDeviceManager::singleton();
     singleton.unregisterCapturer(*m_capturer);
+    closeDisplaySession();
+}
+
+void GStreamerVideoCaptureSource::didEnd()
+{
+    closeDisplaySession();
+}
+
+void GStreamerVideoCaptureSource::closeDisplaySession()
+{
+    if (m_capturer->isCapturingDisplay())
+        GStreamerDisplayCaptureDeviceManager::singleton().stopSource(persistentID());
 }
 
 void GStreamerVideoCaptureSource::settingsDidChange(OptionSet<RealtimeMediaSourceSettings::Flag> settings)

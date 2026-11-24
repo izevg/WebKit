@@ -78,6 +78,8 @@ protected:
 private:
     bool isCaptureSource() const final { return true; }
     void settingsDidChange(OptionSet<RealtimeMediaSourceSettings::Flag>) final;
+    void didEnd() final;
+    void closeDisplaySession();
 
     const RefPtr<GStreamerVideoCapturer> m_capturer;
     CaptureDevice::DeviceType m_deviceType;

@@ -221,11 +221,17 @@ void RealtimeMediaSourceCenter::getDisplayMediaDevices(const MediaStreamRequest&
     if (!request.videoConstraints.isValid)
         return;
 
-    for (auto& device : displayCaptureFactory().displayCaptureDeviceManager().captureDevices()) {
+    auto& factory = displayCaptureFactory();
+    for (auto& device : factory.displayCaptureDeviceManager().captureDevices()) {
         if (!device.enabled())
             continue;
 
-        auto sourceOrError = displayCaptureFactory().createDisplayCaptureSource(device, MediaDeviceHashSalts { hashSalts }, &request.videoConstraints, request.pageIdentifier);
+        if (!factory.validateSourceConstraintsBeforePermission()) {
+            displayDeviceInfo.append({ 0, device });
+            continue;
+        }
+
+        auto sourceOrError = factory.createDisplayCaptureSource(device, MediaDeviceHashSalts { hashSalts }, &request.videoConstraints, request.pageIdentifier);
         if (!sourceOrError)
             continue;
 
@@ -308,9 +314,12 @@ void RealtimeMediaSourceCenter::enumerateDevices(bool shouldEnumerateCamera, boo
 
 void RealtimeMediaSourceCenter::validateRequestConstraints(ValidateHandler&& validateHandler, const MediaStreamRequest& request, MediaDeviceHashSalts&& deviceIdentifierHashSalts)
 {
-    bool shouldEnumerateCamera = request.videoConstraints.isValid;
-    bool shouldEnumerateDisplay = displayCaptureFactory().displayCaptureDeviceManager().requiresCaptureDevicesEnumeration();
-    bool shouldEnumerateMicrophone = request.audioConstraints.isValid;
+    auto& displayFactory = displayCaptureFactory();
+    bool isDisplayRequest = request.type == MediaStreamRequest::Type::DisplayMedia || request.type == MediaStreamRequest::Type::DisplayMediaWithAudio;
+    bool usesDeferredDisplaySource = isDisplayRequest && !displayFactory.validateSourceConstraintsBeforePermission();
+    bool shouldEnumerateCamera = request.videoConstraints.isValid && !usesDeferredDisplaySource;
+    bool shouldEnumerateDisplay = displayFactory.displayCaptureDeviceManager().requiresCaptureDevicesEnumeration();
+    bool shouldEnumerateMicrophone = request.audioConstraints.isValid && !usesDeferredDisplaySource;
     bool shouldEnumerateSpeakers = false;
     enumerateDevices(shouldEnumerateCamera, shouldEnumerateDisplay, shouldEnumerateMicrophone, shouldEnumerateSpeakers, [this, protectedThis = Ref { *this }, validateHandler = WTF::move(validateHandler), request, deviceIdentifierHashSalts = WTF::move(deviceIdentifierHashSalts)]() mutable {
         validateHandler(validateRequestConstraintsAfterEnumeration(request, deviceIdentifierHashSalts));

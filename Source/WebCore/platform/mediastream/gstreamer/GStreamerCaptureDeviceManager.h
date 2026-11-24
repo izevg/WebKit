@@ -36,6 +36,7 @@
 #include "RealtimeMediaSourceFactory.h"
 #include <wtf/Forward.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/unix/UnixFileDescriptor.h>
 
 namespace WebCore {
 
@@ -146,10 +147,16 @@ private:
     GStreamerDisplayCaptureDeviceManager();
     ~GStreamerDisplayCaptureDeviceManager();
 
+    struct ActiveSession {
+        DesktopPortalScreenCast::ScreencastSession portal;
+        UnixFileDescriptor remote;
+    };
+
     Vector<CaptureDevice> m_devices;
 
-    HashMap<String, std::unique_ptr<PipeWireNodeData>> m_sessions;
+    HashMap<String, std::unique_ptr<ActiveSession>> m_sessions;
     RefPtr<DesktopPortalScreenCast> m_portal;
+    bool m_openingSession { false };
 };
 
 } // namespace WebCore

@@ -72,6 +72,7 @@ public:
     virtual ~DisplayCaptureFactory() = default;
     virtual CaptureSourceOrError createDisplayCaptureSource(const CaptureDevice&, MediaDeviceHashSalts&&, const MediaConstraints*, std::optional<PageIdentifier>) = 0;
     virtual DisplayCaptureManager& displayCaptureDeviceManager() = 0;
+    virtual bool validateSourceConstraintsBeforePermission() const { return true; }
 
 protected:
     DisplayCaptureFactory() = default;

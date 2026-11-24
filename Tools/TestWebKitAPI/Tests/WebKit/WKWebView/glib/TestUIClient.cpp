@@ -23,8 +23,11 @@
 #include <WebKitSettingsPrivate.h>
 #include <wtf/HashSet.h>
 #include <wtf/RunLoop.h>
+#include <wtf/Scope.h>
 #include <wtf/StdLibExtras.h>
+#include <wtf/glib/GLibExtras.h>
 #include <wtf/glib/GRefPtr.h>
+#include <wtf/text/MakeString.h>
 #include <wtf/text/StringHash.h>
 
 static const char* kAlertDialogMessage = "WebKitGTK alert dialog message";
@@ -1956,6 +1959,211 @@ static void testWebViewClipboardPermissionRequest(UIClientTest* test, gconstpoin
     g_assert_cmpuint(test->m_clipboardPermissionRequests, ==, 2);
 }
 
+#if PLATFORM(GTK) && ENABLE(MEDIA_STREAM) && USE(GSTREAMER)
+class DisplayPortalTest final : public WebViewTest {
+public:
+    MAKE_GLIB_TEST_FIXTURE(DisplayPortalTest);
+
+    void checkConsent()
+    {
+        if (g_strcmp0(g_getenv("QUICKIE_TEST_SCREENCAST_PORTAL"), "1")) {
+            g_test_skip("Run with QUICKIE_TEST_SCREENCAST_PORTAL=1 in a private dbus-run-session");
+            return;
+        }
+
+        GRefPtr watchdog = adoptGRef(g_timeout_source_new_seconds(40));
+        g_source_set_callback(watchdog.get(), [](gpointer) -> gboolean {
+            g_error("Timed out waiting for synthetic ScreenCast traffic");
+            return G_SOURCE_REMOVE;
+        }, nullptr, nullptr);
+        g_source_attach(watchdog.get(), nullptr);
+        auto stopWatchdog = makeScopeExit([&] {
+            g_source_destroy(watchdog.get());
+        });
+
+        GUniqueOutPtr<GError> error;
+        m_connection = adoptGRef(g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error.outPtr()));
+        g_assert_no_error(error.get());
+        GRefPtr reply = adoptGRef(g_dbus_connection_call_sync(m_connection.get(), "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "RequestName",
+            g_variant_new("(su)", "org.freedesktop.portal.Desktop", 4u), G_VARIANT_TYPE("(u)"), G_DBUS_CALL_FLAGS_NONE, 2000, nullptr, &error.outPtr()));
+        g_assert_no_error(error.get());
+        unsigned result;
+        g_variant_get(reply.get(), "(u)", &result);
+        g_assert_cmpuint(result, ==, 1u);
+
+        m_interfaces = adoptGRef(g_dbus_node_info_new_for_xml(R"XML(
+            <node>
+                <interface name="org.freedesktop.portal.ScreenCast">
+                    <property name="version" type="u" access="read"/>
+                    <method name="CreateSession"><arg type="a{sv}" direction="in"/><arg type="o" direction="out"/></method>
+                    <method name="SelectSources"><arg type="o" direction="in"/><arg type="a{sv}" direction="in"/><arg type="o" direction="out"/></method>
+                    <method name="Start"><arg type="o" direction="in"/><arg type="s" direction="in"/><arg type="a{sv}" direction="in"/><arg type="o" direction="out"/></method>
+                    <method name="OpenPipeWireRemote"><arg type="o" direction="in"/><arg type="a{sv}" direction="in"/><arg type="h" direction="out"/></method>
+                </interface>
+                <interface name="org.freedesktop.portal.Session"><method name="Close"/></interface>
+            </node>
+        )XML", &error.outPtr()));
+        g_assert_no_error(error.get());
+        unsigned desktopObject = registerObject("/org/freedesktop/portal/desktop", "org.freedesktop.portal.ScreenCast");
+
+        WebKitSettings* settings = webkit_web_view_get_settings(webView());
+        webkit_settings_set_enable_media_stream(settings, TRUE);
+        webkit_settings_set_enable_mock_capture_devices(settings, FALSE);
+        g_signal_connect(webView(), "permission-request", G_CALLBACK(+[](WebKitWebView*, WebKitPermissionRequest* request, DisplayPortalTest* test) -> gboolean {
+            if (!WEBKIT_IS_USER_MEDIA_PERMISSION_REQUEST(request) || !webkit_user_media_permission_is_for_display_device(WEBKIT_USER_MEDIA_PERMISSION_REQUEST(request)))
+                return FALSE;
+
+            test->m_events.append(Event::Permission);
+            if (test->m_allow)
+                webkit_permission_request_allow(request);
+            else
+                webkit_permission_request_deny(request);
+            return TRUE;
+        }), this);
+        showInWindow();
+
+        requestDisplay(false, PortalResult::OpenFailure, "denied"_s);
+        g_assert_true((m_events == Vector<Event> { Event::Permission }));
+
+        requestDisplay(true, PortalResult::InvalidCreateHandle, "invalid-create-handle"_s);
+        g_assert_true((m_events == Vector<Event> { Event::Permission, Event::Create, Event::Close }));
+
+        requestDisplay(true, PortalResult::CancelSelection, "cancelled-selection"_s);
+        g_assert_true((m_events == Vector<Event> { Event::Permission, Event::Create, Event::Select, Event::Close }));
+
+        requestDisplay(true, PortalResult::CancelStart, "cancelled-start"_s);
+        g_assert_true((m_events == Vector<Event> { Event::Permission, Event::Create, Event::Select, Event::Start, Event::Close }));
+
+        requestDisplay(true, PortalResult::OpenFailure, "open-failed"_s);
+        g_assert_true((m_events == Vector<Event> { Event::Permission, Event::Create, Event::Select, Event::Start, Event::Open, Event::Close }));
+
+        requestDisplay(true, PortalResult::Vanish, "portal-vanished"_s);
+        g_assert_true((m_events == Vector<Event> { Event::Permission, Event::Create, Event::Select, Event::Start }));
+        g_dbus_connection_unregister_object(m_connection.get(), desktopObject);
+    }
+
+private:
+    enum class Event { Permission, Create, Select, Start, Open, Close };
+    enum class PortalResult { InvalidCreateHandle, CancelSelection, CancelStart, OpenFailure, Vanish };
+
+    void requestDisplay(bool allow, PortalResult result, ASCIILiteral scenario)
+    {
+        m_events.clear();
+        m_allow = allow;
+        m_result = result;
+        auto html = makeString(R"HTML(
+            <button style="position:absolute;left:0;top:0" onclick="
+                navigator.mediaDevices.getDisplayMedia()
+                    .then(() => document.title = 'unexpected stream')
+                    .catch(error => document.title = error.name + ':)HTML"_s, scenario, R"HTML(')
+            ">Share</button>
+        )HTML"_s).utf8();
+        loadHtml(html.legacyCStringPointer(), "https://display.test/");
+        waitUntilLoadFinished();
+        clickMouseButton(5, 5);
+        auto title = makeString("NotAllowedError:"_s, scenario).ascii();
+        waitUntilTitleChangedTo(title.data());
+        g_assert_cmpuint(m_sessionObject, ==, 0);
+    }
+
+    unsigned registerObject(const char* path, const char* interfaceName)
+    {
+        static const GDBusInterfaceVTable vtable = {
+            .method_call = [](GDBusConnection*, const char*, const char*, const char*, const char* method, GVariant* arguments, GDBusMethodInvocation* invocation, gpointer data) {
+                static_cast<DisplayPortalTest*>(data)->handleCall(method, arguments, invocation);
+            },
+            .get_property = [](GDBusConnection*, const char*, const char*, const char*, const char*, GError**, gpointer) {
+                return g_variant_new_uint32(2);
+            },
+        };
+        GUniqueOutPtr<GError> error;
+        auto* interface = g_dbus_node_info_lookup_interface(m_interfaces.get(), interfaceName);
+        unsigned registration = g_dbus_connection_register_object(m_connection.get(), path, interface, &vtable, this, nullptr, &error.outPtr());
+        g_assert_no_error(error.get());
+        g_assert_cmpuint(registration, >, 0);
+        return registration;
+    }
+
+    void handleCall(const char* method, GVariant* arguments, GDBusMethodInvocation* invocation)
+    {
+        if (!g_strcmp0(method, "Close")) {
+            m_events.append(Event::Close);
+            g_assert_cmpuint(m_sessionObject, >, 0);
+            g_dbus_connection_unregister_object(m_connection.get(), std::exchange(m_sessionObject, 0));
+            g_dbus_method_invocation_return_value(invocation, nullptr);
+            return;
+        }
+
+        if (!g_strcmp0(method, "OpenPipeWireRemote")) {
+            m_events.append(Event::Open);
+            g_dbus_method_invocation_return_dbus_error(invocation, "org.freedesktop.portal.Error.Failed", "Synthetic PipeWire failure");
+            return;
+        }
+
+        unsigned response = 0;
+        GVariantBuilder results;
+        g_variant_builder_init(&results, G_VARIANT_TYPE_VARDICT);
+        GRefPtr options = adoptGRef(g_variant_get_child_value(arguments, g_variant_n_children(arguments) - 1));
+        const char* token;
+        g_assert_true(g_variant_lookup(options.get(), "handle_token", "&s", &token));
+        auto destination = StringView::fromLatin1(g_dbus_method_invocation_get_sender(invocation));
+        auto sender = makeStringByReplacingAll(destination.substring(1), '.', '_');
+
+        if (!g_strcmp0(method, "CreateSession")) {
+            g_assert_true(m_allow && m_events == Vector<Event> { Event::Permission });
+            m_events.append(Event::Create);
+            const char* sessionToken;
+            g_assert_true(g_variant_lookup(options.get(), "session_handle_token", "&s", &sessionToken));
+            auto sessionPath = makeString("/org/freedesktop/portal/desktop/session/"_s, sender, '/', String::fromUTF8(unsafeSpan(sessionToken))).utf8();
+            m_sessionObject = registerObject(sessionPath.legacyCStringPointer(), "org.freedesktop.portal.Session");
+            auto returnedPath = m_result == PortalResult::InvalidCreateHandle ? "/unexpected"_s : UTF8CStringView(sessionPath);
+            g_variant_builder_add(&results, "{sv}", "session_handle", gVariantNewString(returnedPath));
+        } else if (!g_strcmp0(method, "SelectSources")) {
+            m_events.append(Event::Select);
+            if (m_result == PortalResult::CancelSelection)
+                response = 1;
+        } else {
+            g_assert_cmpstr(method, ==, "Start");
+            m_events.append(Event::Start);
+            if (m_result == PortalResult::CancelStart)
+                response = 1;
+            else {
+                GVariantBuilder streams;
+                g_variant_builder_init(&streams, G_VARIANT_TYPE("a(ua{sv})"));
+                g_variant_builder_add(&streams, "(u@a{sv})", 42u, g_variant_new_array(G_VARIANT_TYPE("{sv}"), nullptr, 0));
+                g_variant_builder_add(&results, "{sv}", "streams", g_variant_builder_end(&streams));
+            }
+        }
+
+        auto path = makeString("/org/freedesktop/portal/desktop/request/"_s, sender, '/', String::fromUTF8(unsafeSpan(token))).utf8();
+        GUniqueOutPtr<GError> error;
+        if (m_result == PortalResult::Vanish && !g_strcmp0(method, "Start")) {
+            g_variant_builder_clear(&results);
+            g_dbus_method_invocation_return_value(invocation, gVariantNew("(o)", path));
+            g_dbus_connection_unregister_object(m_connection.get(), std::exchange(m_sessionObject, 0));
+            GRefPtr reply = adoptGRef(g_dbus_connection_call_sync(m_connection.get(), "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "ReleaseName",
+                g_variant_new("(s)", "org.freedesktop.portal.Desktop"), G_VARIANT_TYPE("(u)"), G_DBUS_CALL_FLAGS_NONE, 2000, nullptr, &error.outPtr()));
+            g_assert_no_error(error.get());
+            g_assert_nonnull(reply.get());
+            return;
+        }
+
+        // Emit before returning the handle to catch a client subscribing too late.
+        g_assert_true(gDBusConnectionEmitSignal(m_connection.get(), g_dbus_method_invocation_get_sender(invocation), path, "org.freedesktop.portal.Request", "Response",
+            g_variant_new("(ua{sv})", response, &results), &error.outPtr()));
+        g_assert_no_error(error.get());
+        g_dbus_method_invocation_return_value(invocation, gVariantNew("(o)", path));
+    }
+
+    GRefPtr<GDBusConnection> m_connection;
+    GRefPtr<GDBusNodeInfo> m_interfaces;
+    Vector<Event> m_events;
+    unsigned m_sessionObject { 0 };
+    bool m_allow { false };
+    PortalResult m_result { PortalResult::OpenFailure };
+};
+#endif
+
 void beforeAll()
 {
     UIClientTest::add("WebKitWebView", "create-ready-close", testWebViewCreateReadyClose);
@@ -1999,6 +2207,11 @@ void beforeAll()
     UIClientTest::add("WebKitWebView", "usermedia-permission-requests", testWebViewUserMediaPermissionRequests);
     UIClientTest::add("WebKitWebView", "audio-usermedia-permission-request", testWebViewAudioOnlyUserMediaPermissionRequests);
     UIClientTest::add("WebKitWebView", "display-usermedia-permission-request", testWebViewDisplayUserMediaPermissionRequests);
+#if PLATFORM(GTK) && USE(GSTREAMER)
+    DisplayPortalTest::add("WebKitWebView", "display-portal-consent", [](DisplayPortalTest* test, gconstpointer) {
+        test->checkConsent();
+    });
+#endif
 #endif
     // FIXME: Implement mouse click in WPE.
 #if PLATFORM(GTK)
