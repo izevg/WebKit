@@ -1,0 +1,7 @@
+Test console row selection when the visible messages change.
+
+PASS: A missing anchor restarts selection at the visible target.
+PASS: A removed target leaves the visible selection in place.
+PASS: Shrinking the visible list keeps a valid selection.
+PASS: Clearing the selection resets the stored range.
+

@@ -770,8 +770,16 @@ WI.LogContentView = class LogContentView extends WI.ContentView
         if (rangeSelection) {
             var messages = this._visibleMessageElements();
 
-            var refIndex = this._referenceMessageForRangeSelection ? messages.indexOf(this._referenceMessageForRangeSelection) : 0;
-            var targetIndex = messages.indexOf(message);
+            const targetIndex = messages.indexOf(message);
+            if (targetIndex === -1)
+                return;
+
+            let refIndex = this._referenceMessageForRangeSelection ? messages.indexOf(this._referenceMessageForRangeSelection) : 0;
+            if (refIndex === -1) {
+                this._clearMessagesSelection();
+                this._referenceMessageForRangeSelection = message;
+                refIndex = targetIndex;
+            }
 
             var newRange = [Math.min(refIndex, targetIndex), Math.max(refIndex, targetIndex)];
 
@@ -779,7 +787,7 @@ WI.LogContentView = class LogContentView extends WI.ContentView
                 return;
 
             var startIndex = this._selectionRange ? Math.min(this._selectionRange[0], newRange[0]) : newRange[0];
-            var endIndex = this._selectionRange ? Math.max(this._selectionRange[1], newRange[1]) : newRange[1];
+            var endIndex = this._selectionRange ? Math.min(Math.max(this._selectionRange[1], newRange[1]), messages.length - 1) : newRange[1];
 
             for (var i = startIndex; i <= endIndex; ++i) {
                 var messageInRange = messages[i];
@@ -850,6 +858,7 @@ WI.LogContentView = class LogContentView extends WI.ContentView
             message.classList.remove(WI.LogContentView.SelectedStyleClassName);
         });
         this._selectedMessages = [];
+        this._selectionRange = null;
         delete this._referenceMessageForRangeSelection;
     }
 
@@ -899,7 +908,7 @@ WI.LogContentView = class LogContentView extends WI.ContentView
         this._logViewController.clear();
 
         this._nestingLevel = 0;
-        this._selectedMessages = [];
+        this._clearMessagesSelection();
         this._immediatelyHiddenMessages.clear();
 
         if (this._currentSearchQuery)
