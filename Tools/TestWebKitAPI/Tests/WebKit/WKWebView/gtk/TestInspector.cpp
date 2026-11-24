@@ -402,11 +402,88 @@ static void testInspectorCustomContainerDestroyed(CustomInspectorTest* test, gco
     test->m_events.clear();
 }
 
+#if USE(GTK4) && ENABLE(QUICKIE_RELOCATABLE_GTK)
+class NativeInspectorTest final : public InspectorTest {
+public:
+    MAKE_GLIB_TEST_FIXTURE(NativeInspectorTest);
+
+    bool openWindow() override
+    {
+        InspectorTest::openWindow();
+        return FALSE;
+    }
+
+    bool attach() override
+    {
+        InspectorTest::attach();
+        g_main_loop_quit(m_mainLoop);
+        return FALSE;
+    }
+
+    bool detach() override
+    {
+        InspectorTest::detach();
+        return FALSE;
+    }
+};
+
+static void testInspectorFloatingDock(NativeInspectorTest* test, gconstpointer)
+{
+    test->showInWindow(960, 640);
+    test->loadHtml("<!doctype html><body style='margin: 0'>Inspector target</body>", nullptr);
+    test->waitUntilLoadFinished();
+    test->show();
+    test->resizeViewAndAttach();
+    test->resizeView(960, 640);
+
+    GtkWidget* page = GTK_WIDGET(test->webView());
+    GtkWidget* inspector = GTK_WIDGET(webkit_web_inspector_get_web_view(test->m_inspector));
+    g_assert_nonnull(inspector);
+    g_assert_true(gtk_widget_get_parent(inspector) == page);
+
+    GError* error = nullptr;
+    auto* height = test->runJavaScriptAndWaitUntilFinished("innerHeight", &error);
+    g_assert_no_error(error);
+    g_assert_cmpfloat(test->javascriptResultToNumber(height), ==, gtk_widget_get_height(page));
+
+    graphene_rect_t bounds;
+    g_assert_true(gtk_widget_compute_bounds(inspector, page, &bounds));
+    g_assert_cmpfloat(bounds.origin.x, ==, 12);
+    g_assert_cmpfloat(bounds.size.width, ==, gtk_widget_get_width(page) - 24);
+    g_assert_cmpfloat(bounds.origin.y + bounds.size.height, ==, gtk_widget_get_height(page) - 12);
+    g_assert_cmpfloat(bounds.size.height, ==, webkit_web_inspector_get_attached_height(test->m_inspector));
+
+    g_assert_true(gtk_widget_pick(page, 6, bounds.origin.y + bounds.size.height / 2, GTK_PICK_DEFAULT) == page);
+    g_assert_true(gtk_widget_pick(page, bounds.origin.x + 1, bounds.origin.y + 1, GTK_PICK_DEFAULT) == page);
+    auto* picked = gtk_widget_pick(page, bounds.origin.x + bounds.size.width / 2, bounds.origin.y + bounds.size.height / 2, GTK_PICK_DEFAULT);
+    g_assert_nonnull(picked);
+    g_assert_true(picked == inspector || gtk_widget_is_ancestor(picked, inspector));
+
+    test->detachAndWaitUntilWindowOpened();
+    GtkRoot* root = gtk_widget_get_root(inspector);
+    g_assert_true(GTK_IS_WINDOW(root));
+    g_assert_true(gtk_window_get_child(GTK_WINDOW(root)) == inspector);
+    g_assert_true(GTK_IS_HEADER_BAR(gtk_window_get_titlebar(GTK_WINDOW(root))));
+    g_assert_true(gtk_widget_has_css_class(GTK_WIDGET(root), "quickie-inspector-window"));
+    g_assert_true(gtk_widget_has_css_class(inspector, "quickie-inspector-detached"));
+    g_assert_false(gtk_widget_has_css_class(inspector, "quickie-inspector-docked"));
+
+    test->resizeViewAndAttach();
+    g_assert_true(gtk_widget_get_parent(inspector) == page);
+    g_assert_true(gtk_widget_has_css_class(inspector, "quickie-inspector-docked"));
+    g_assert_false(gtk_widget_has_css_class(inspector, "quickie-inspector-detached"));
+    test->close();
+}
+#endif
+
 void beforeAll()
 {
     InspectorTest::add("WebKitWebInspector", "default", testInspectorDefault);
     CustomInspectorTest::add("WebKitWebInspector", "manual-attach-detach", testInspectorManualAttachDetach);
     CustomInspectorTest::add("WebKitWebInspector", "custom-container-destroyed", testInspectorCustomContainerDestroyed);
+#if USE(GTK4) && ENABLE(QUICKIE_RELOCATABLE_GTK)
+    NativeInspectorTest::add("WebKitWebInspector", "floating-dock", testInspectorFloatingDock);
+#endif
 }
 
 void afterAll()

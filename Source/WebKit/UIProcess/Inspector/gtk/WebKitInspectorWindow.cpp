@@ -28,6 +28,7 @@
 
 #include "WebInspectorUIProxy.h"
 #include <glib/gi18n-lib.h>
+#include <wtf/glib/GRefPtr.h>
 #include <wtf/glib/GUniquePtr.h>
 
 using namespace WebKit;
@@ -111,3 +112,56 @@ void webkitInspectorWindowSetSubtitle(WebKitInspectorWindow* window, UTF8CString
     gtk_header_bar_set_subtitle(GTK_HEADER_BAR(window->headerBar), subtitle.utf8());
 #endif // USE(GTK4)
 }
+
+#if USE(GTK4) && ENABLE(QUICKIE_RELOCATABLE_GTK)
+static void ensureQuickieInspectorStyles(GdkDisplay* display)
+{
+    constexpr auto* styleInstalled = "quickie-inspector-style-installed";
+    if (g_object_get_data(G_OBJECT(display), styleInstalled))
+        return;
+
+    static constexpr auto style = R"CSS(
+        .quickie-inspector-docked {
+            border-radius: 16px;
+            box-shadow: 0 20px 48px -10px rgba(0, 0, 0, 0.38), 0 2px 8px rgba(0, 0, 0, 0.16);
+        }
+        window.quickie-inspector-window.csd:not(.maximized):not(.fullscreen):not(.tiled) {
+            border-radius: 16px;
+        }
+        window.quickie-inspector-window.csd:not(.maximized):not(.fullscreen):not(.tiled) headerbar.titlebar {
+            border-radius: 16px 16px 0 0;
+        }
+        window.quickie-inspector-window.csd:not(.maximized):not(.fullscreen):not(.tiled) > .quickie-inspector-detached {
+            border-radius: 0 0 16px 16px;
+        }
+    )CSS";
+    auto provider = adoptGRef(gtk_css_provider_new());
+#if GTK_CHECK_VERSION(4, 12, 0)
+    gtk_css_provider_load_from_string(provider.get(), style);
+#else
+    gtk_css_provider_load_from_data(provider.get(), style, -1);
+#endif
+    gtk_style_context_add_provider_for_display(display, GTK_STYLE_PROVIDER(provider.get()), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_set_data(G_OBJECT(display), styleInstalled, GINT_TO_POINTER(1));
+}
+
+void webkitInspectorViewSetQuickieAppearance(GtkWidget* view, QuickieInspectorAppearance appearance)
+{
+    constexpr auto* originalOverflow = "quickie-inspector-original-overflow";
+    gtk_widget_remove_css_class(view, "quickie-inspector-docked");
+    gtk_widget_remove_css_class(view, "quickie-inspector-detached");
+
+    if (appearance == QuickieInspectorAppearance::Unstyled) {
+        if (auto overflow = g_object_steal_data(G_OBJECT(view), originalOverflow))
+            gtk_widget_set_overflow(view, static_cast<GtkOverflow>(GPOINTER_TO_INT(overflow) - 1));
+        return;
+    }
+
+    ensureQuickieInspectorStyles(gtk_widget_get_display(view));
+    if (!g_object_get_data(G_OBJECT(view), originalOverflow))
+        g_object_set_data(G_OBJECT(view), originalOverflow, GINT_TO_POINTER(gtk_widget_get_overflow(view) + 1));
+    gtk_widget_add_css_class(view, appearance == QuickieInspectorAppearance::Docked ? "quickie-inspector-docked" : "quickie-inspector-detached");
+    // GTK uses the same rounded CSS padding box for clipping and event picking.
+    gtk_widget_set_overflow(view, GTK_OVERFLOW_HIDDEN);
+}
+#endif

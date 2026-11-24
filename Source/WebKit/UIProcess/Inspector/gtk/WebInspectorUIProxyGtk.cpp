@@ -323,6 +323,10 @@ void WebInspectorUIProxy::platformCreateFrontendWindow()
     m_inspectorWindow.reset(webkitInspectorWindowNew());
 #if USE(GTK4)
     gtk_window_set_child(GTK_WINDOW(m_inspectorWindow.get()), m_inspectorView.get());
+#if ENABLE(QUICKIE_RELOCATABLE_GTK)
+    gtk_widget_add_css_class(m_inspectorWindow.get(), "quickie-inspector-window");
+    webkitInspectorViewSetQuickieAppearance(m_inspectorView.get(), QuickieInspectorAppearance::Detached);
+#endif
 #else
     gtk_container_add(GTK_CONTAINER(m_inspectorWindow.get()), m_inspectorView.get());
     gtk_widget_show(m_inspectorView.get());
@@ -458,6 +462,9 @@ void WebInspectorUIProxy::platformAttach()
     GRefPtr<GtkWidget> inspectorView = m_inspectorView.get();
     if (m_inspectorWindow) {
 #if USE(GTK4)
+#if ENABLE(QUICKIE_RELOCATABLE_GTK)
+        webkitInspectorViewSetQuickieAppearance(inspectorView.get(), QuickieInspectorAppearance::Unstyled);
+#endif
         gtk_window_set_child(GTK_WINDOW(m_inspectorWindow.get()), nullptr);
 #else
         gtk_container_remove(GTK_CONTAINER(m_inspectorWindow.get()), m_inspectorView.get());

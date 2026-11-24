@@ -47,3 +47,8 @@ GtkWidget* webkitInspectorWindowNew();
 G_END_DECLS
 
 void webkitInspectorWindowSetSubtitle(WebKitInspectorWindow*, UTF8CStringView subtitle);
+
+#if USE(GTK4) && ENABLE(QUICKIE_RELOCATABLE_GTK)
+enum class QuickieInspectorAppearance { Unstyled, Docked, Detached };
+void webkitInspectorViewSetQuickieAppearance(GtkWidget*, QuickieInspectorAppearance);
+#endif
