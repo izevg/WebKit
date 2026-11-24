@@ -1038,9 +1038,6 @@ static void webkitWebViewConstructed(GObject* object)
     if (!priv->settings)
         priv->settings = adoptGRef(webkit_settings_new());
 
-    if (!priv->userContentManager)
-        priv->userContentManager = adoptGRef(webkit_user_content_manager_new());
-
 #if ENABLE(2022_GLIB_API)
 #if ENABLE(REMOTE_INSPECTOR)
 #if PLATFORM(GTK) && USE(GTK4)
@@ -1073,7 +1070,19 @@ static void webkitWebViewConstructed(GObject* object)
     if (!priv->websitePolicies)
         priv->websitePolicies = adoptGRef(webkit_website_policies_new());
 
-    Ref configuration = priv->relatedView && priv->relatedView->priv->configurationForNextRelatedView ? priv->relatedView->priv->configurationForNextRelatedView.releaseNonNull() : webkitWebViewCreatePageConfiguration(webView);
+    RefPtr<API::PageConfiguration> relatedConfiguration;
+    if (priv->relatedView)
+        relatedConfiguration = std::exchange(priv->relatedView->priv->configurationForNextRelatedView, nullptr);
+
+    if (relatedConfiguration) {
+        if (priv->userContentManager)
+            relatedConfiguration->setUserContentController(webkitUserContentManagerGetUserContentControllerProxy(priv->userContentManager.get()));
+        else
+            priv->userContentManager = webkit_web_view_get_user_content_manager(priv->relatedView);
+    } else if (!priv->userContentManager)
+        priv->userContentManager = adoptGRef(webkit_user_content_manager_new());
+
+    Ref configuration = relatedConfiguration ? relatedConfiguration.releaseNonNull() : webkitWebViewCreatePageConfiguration(webView);
     webkitWebViewCreatePage(webView, WTF::move(configuration));
     webkitWebContextWebViewCreated(priv->context.get(), webView);
 
@@ -1496,6 +1505,8 @@ static void webkit_web_view_class_init(WebKitWebViewClass* webViewClass)
      * WebKitWebView:user-content-manager:
      *
      * The #WebKitUserContentManager of the view.
+     * A view created for #WebKitWebView::create with #WebKitWebView:related-view
+     * inherits the related view's manager unless this property supplies one.
      *
      * Since: 2.6
      */

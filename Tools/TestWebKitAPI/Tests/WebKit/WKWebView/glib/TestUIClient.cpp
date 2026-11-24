@@ -711,6 +711,120 @@ static void testWebViewCreateNavigationData(CreateNavigationDataTest* test, gcon
 }
 #endif // PLATFORM(GTK)
 
+#if PLATFORM(GTK) && USE(GTK4)
+class RelatedPopupContentManagerTest final : public WebViewTest {
+public:
+    MAKE_GLIB_TEST_FIXTURE(RelatedPopupContentManagerTest);
+
+    void checkPopup(bool explicitManager, bool opensViaLink)
+    {
+        showInWindow();
+        auto* opener = webView();
+        auto* openerManager = webkit_web_view_get_user_content_manager(opener);
+        startObserving(openerManager);
+        auto* expectedPopupManager = openerManager;
+        if (explicitManager) {
+            m_popupManager = adoptGRef(webkit_user_content_manager_new());
+            startObserving(m_popupManager.get());
+            expectedPopupManager = m_popupManager.get();
+        }
+        auto createHandler = g_signal_connect(opener, "create", G_CALLBACK(createPopup), this);
+        auto* page = opensViaLink
+            ? "<a style='position:absolute;left:0;top:0' href='about:blank' target='_blank' rel='opener'>Open popup</a>"
+            : "<button style='position:absolute;left:0;top:0' onclick='window.open()'>Open popup</button>";
+        loadHtml(page, nullptr);
+        waitUntilLoadFinished();
+
+        checkMessage(opener, openerManager, "opener-before");
+        clickMouseButton(8, 8);
+        if (!m_popupReady)
+            waitForNotification();
+        g_assert_true(m_popupReady);
+        GRefPtr<WebKitWebView> popup = adoptGRef(m_popup);
+        g_assert_nonnull(popup.get());
+        g_assert_true(webkit_web_view_get_context(popup.get()) == webkit_web_view_get_context(opener));
+        g_assert_true(webkit_web_view_get_network_session(popup.get()) == webkit_web_view_get_network_session(opener));
+        g_assert_true(webkit_web_view_get_user_content_manager(popup.get()) == expectedPopupManager);
+        g_assert_cmpuint(m_navigationType, ==, opensViaLink ? WEBKIT_NAVIGATION_TYPE_LINK_CLICKED : WEBKIT_NAVIGATION_TYPE_OTHER);
+        if (webkit_web_view_is_loading(popup.get()))
+            waitUntilLoadFinished(popup.get());
+
+        GUniqueOutPtr<GError> error;
+        auto* hasOpener = runJavaScriptAndWaitUntilFinished("window.opener !== null", &error.outPtr(), popup.get());
+        g_assert_no_error(error.get());
+        g_assert_nonnull(hasOpener);
+        g_assert_true(jsc_value_to_boolean(hasOpener));
+        checkMessage(popup.get(), expectedPopupManager, "popup");
+        checkMessage(opener, openerManager, "opener-after");
+
+        g_signal_handler_disconnect(opener, createHandler);
+        g_signal_handlers_disconnect_by_data(popup.get(), this);
+        g_signal_handlers_disconnect_by_data(openerManager, this);
+        if (explicitManager)
+            g_signal_handlers_disconnect_by_data(m_popupManager.get(), this);
+    }
+
+private:
+    static WebKitWebView* createPopup(WebKitWebView* opener, WebKitNavigationAction* navigation, RelatedPopupContentManagerTest* test)
+    {
+        g_assert_true(webkit_navigation_action_is_user_gesture(navigation));
+        test->m_navigationType = webkit_navigation_action_get_navigation_type(navigation);
+        auto popup = test->createWebView("related-view", opener, "user-content-manager", test->m_popupManager.get(), nullptr);
+        test->m_popup = popup.get();
+        g_signal_connect(popup.get(), "ready-to-show", G_CALLBACK(+[](WebKitWebView*, RelatedPopupContentManagerTest* test) {
+            test->m_popupReady = true;
+            g_main_loop_quit(test->m_notifications.get());
+        }), test);
+        return popup.leakRef();
+    }
+
+    void startObserving(WebKitUserContentManager* manager)
+    {
+        g_signal_connect(manager, "script-message-received::attribution", G_CALLBACK(+[](WebKitUserContentManager* manager, JSCValue* value, RelatedPopupContentManagerTest* test) {
+            test->m_messages.append({ manager, GUniquePtr<char>(jsc_value_to_string(value)) });
+            g_main_loop_quit(test->m_notifications.get());
+        }), this);
+        g_assert_true(webkit_user_content_manager_register_script_message_handler(manager, "attribution", nullptr));
+    }
+
+    void checkMessage(WebKitWebView* view, WebKitUserContentManager* manager, const char* payload)
+    {
+        auto receivedCount = m_messages.size();
+        GUniquePtr<char> script(g_strdup_printf("window.webkit.messageHandlers.attribution.postMessage('%s');", payload));
+        GUniqueOutPtr<GError> error;
+        runJavaScriptAndWaitUntilFinished(script.get(), &error.outPtr(), view);
+        g_assert_no_error(error.get());
+        if (m_messages.size() == receivedCount)
+            waitForNotification();
+        g_assert_cmpuint(m_messages.size(), ==, receivedCount + 1);
+        g_assert_true(m_messages.last().manager == manager);
+        g_assert_cmpstr(m_messages.last().payload.get(), ==, payload);
+    }
+
+    void waitForNotification()
+    {
+        auto timeout = g_timeout_add_seconds(10, [](gpointer) -> gboolean {
+            g_error("Timed out waiting for a related popup notification");
+            return G_SOURCE_REMOVE;
+        }, nullptr);
+        g_main_loop_run(m_notifications.get());
+        g_source_remove(timeout);
+    }
+
+    struct ScriptMessage {
+        WebKitUserContentManager* manager;
+        GUniquePtr<char> payload;
+    };
+
+    GRefPtr<GMainLoop> m_notifications { adoptGRef(g_main_loop_new(nullptr, FALSE)) };
+    GRefPtr<WebKitUserContentManager> m_popupManager;
+    Vector<ScriptMessage> m_messages;
+    WebKitWebView* m_popup { nullptr };
+    WebKitNavigationType m_navigationType { WEBKIT_NAVIGATION_TYPE_OTHER };
+    bool m_popupReady { false };
+};
+#endif
+
 #if PLATFORM(GTK)
 static gboolean checkMimeTypeForFilter(GtkFileFilter* filter, const gchar* mimeType)
 {
@@ -1848,6 +1962,17 @@ void beforeAll()
     // FIXME: Implement mouse clicks in WPE.
 #if PLATFORM(GTK)
     CreateNavigationDataTest::add("WebKitWebView", "create-navigation-data", testWebViewCreateNavigationData);
+#endif
+#if PLATFORM(GTK) && USE(GTK4)
+    RelatedPopupContentManagerTest::add("WebKitWebView", "related-popup-explicit-manager", [](RelatedPopupContentManagerTest* test, gconstpointer) {
+        test->checkPopup(true, false);
+    });
+    RelatedPopupContentManagerTest::add("WebKitWebView", "related-link-popup-explicit-manager", [](RelatedPopupContentManagerTest* test, gconstpointer) {
+        test->checkPopup(true, true);
+    });
+    RelatedPopupContentManagerTest::add("WebKitWebView", "related-popup-inherits-manager", [](RelatedPopupContentManagerTest* test, gconstpointer) {
+        test->checkPopup(false, false);
+    });
 #endif
     UIClientTest::add("WebKitWebView", "javascript-dialogs", testWebViewJavaScriptDialogs);
     UIClientTest::add("WebKitWebView", "window-properties", testWebViewWindowProperties);
