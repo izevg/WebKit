@@ -30,9 +30,16 @@
 #include <glib/gi18n-lib.h>
 #include <wtf/TZoneMallocInlines.h>
 #include <wtf/glib/GLibExtras.h>
+#include <wtf/glib/GWeakPtr.h>
 #include <wtf/glib/WTFGType.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/MakeString.h>
+
+#if PLATFORM(GTK) && USE(GTK4) && ENABLE(REMOTE_INSPECTOR)
+#include <wtf/JSONValues.h>
+#include <wtf/MainThread.h>
+#include <wtf/URL.h>
+#endif
 
 #if ENABLE(2022_GLIB_API)
 #include "WebKitNetworkSession.h"
@@ -64,6 +71,9 @@ enum {
 enum {
     CREATE_WEB_VIEW,
     WILL_CLOSE,
+#if PLATFORM(GTK) && USE(GTK4)
+    MESSAGE_RECEIVED,
+#endif
 
     LAST_SIGNAL
 };
@@ -71,8 +81,9 @@ enum {
 struct _WebKitAutomationSessionPrivate {
     RefPtr<WebAutomationSession> session;
     WebKitApplicationInfo* applicationInfo;
-    WebKitWebContext* webContext;
+    GWeakPtr<WebKitWebContext> webContext;
     UTF8CString id;
+    bool isLocal { false };
 };
 
 static std::array<unsigned, LAST_SIGNAL> signals;
@@ -96,8 +107,18 @@ private:
     void didDisconnectFromRemote(WebAutomationSession&) override
     {
 #if ENABLE(REMOTE_INSPECTOR)
-        webkitWebContextWillCloseAutomationSession(m_session->priv->webContext);
+        if (m_session->priv->isLocal)
+            return;
+        if (auto* webContext = m_session->priv->webContext.get())
+            webkitWebContextWillCloseAutomationSession(webContext);
 #endif
+    }
+
+    WebKitWebView* webViewForPage(WebPageProxy& page) const
+    {
+        if (auto* webContext = m_session->priv->webContext.get())
+            return webkitWebContextGetWebViewForPage(webContext, &page);
+        return nullptr;
     }
 
     void requestNewPageWithOptions(WebAutomationSession&, API::AutomationSessionBrowsingContextOptions options, CompletionHandler<void(WebPageProxy*)>&& completionHandler) override
@@ -113,7 +134,7 @@ private:
 
     void requestMaximizeWindowOfPage(WebAutomationSession&, WebPageProxy& page, CompletionHandler<void()>&& completionHandler) override
     {
-        if (auto* webView = webkitWebContextGetWebViewForPage(m_session->priv->webContext, &page))
+        if (auto* webView = webViewForPage(page))
             webkitWebViewMaximizeWindow(webView, WTF::move(completionHandler));
         else
             completionHandler();
@@ -121,7 +142,7 @@ private:
 
     void requestHideWindowOfPage(WebAutomationSession&, WebPageProxy& page, CompletionHandler<void()>&& completionHandler) override
     {
-        if (auto* webView = webkitWebContextGetWebViewForPage(m_session->priv->webContext, &page))
+        if (auto* webView = webViewForPage(page))
             webkitWebViewMinimizeWindow(webView, WTF::move(completionHandler));
         else
             completionHandler();
@@ -129,7 +150,7 @@ private:
 
     void requestRestoreWindowOfPage(WebAutomationSession&, WebPageProxy& page, CompletionHandler<void()>&& completionHandler) override
     {
-        if (auto* webView = webkitWebContextGetWebViewForPage(m_session->priv->webContext, &page))
+        if (auto* webView = webViewForPage(page))
             webkitWebViewRestoreWindow(webView, WTF::move(completionHandler));
         else
             completionHandler();
@@ -137,7 +158,7 @@ private:
 
     bool isShowingJavaScriptDialogOnPage(WebAutomationSession&, WebPageProxy& page) override
     {
-        auto* webView = webkitWebContextGetWebViewForPage(m_session->priv->webContext, &page);
+        auto* webView = webViewForPage(page);
         if (!webView)
             return false;
         return webkitWebViewIsShowingScriptDialog(webView);
@@ -145,7 +166,7 @@ private:
 
     void dismissCurrentJavaScriptDialogOnPage(WebAutomationSession&, WebPageProxy& page) override
     {
-        auto* webView = webkitWebContextGetWebViewForPage(m_session->priv->webContext, &page);
+        auto* webView = webViewForPage(page);
         if (!webView)
             return;
         webkitWebViewDismissCurrentScriptDialog(webView);
@@ -153,7 +174,7 @@ private:
 
     void acceptCurrentJavaScriptDialogOnPage(WebAutomationSession&, WebPageProxy& page) override
     {
-        auto* webView = webkitWebContextGetWebViewForPage(m_session->priv->webContext, &page);
+        auto* webView = webViewForPage(page);
         if (!webView)
             return;
         webkitWebViewAcceptCurrentScriptDialog(webView);
@@ -161,7 +182,7 @@ private:
 
     std::optional<String> messageOfCurrentJavaScriptDialogOnPage(WebAutomationSession&, WebPageProxy& page) override
     {
-        auto* webView = webkitWebContextGetWebViewForPage(m_session->priv->webContext, &page);
+        auto* webView = webViewForPage(page);
         if (!webView)
             return std::nullopt;
         return webkitWebViewGetCurrentScriptDialogMessage(webView);
@@ -169,7 +190,7 @@ private:
 
     void setUserInputForCurrentJavaScriptPromptOnPage(WebAutomationSession&, WebPageProxy& page, const String& userInput) override
     {
-        auto* webView = webkitWebContextGetWebViewForPage(m_session->priv->webContext, &page);
+        auto* webView = webViewForPage(page);
         if (!webView)
             return;
         webkitWebViewSetCurrentScriptDialogUserInput(webView, userInput);
@@ -177,7 +198,7 @@ private:
 
     std::optional<API::AutomationSessionClient::JavaScriptDialogType> typeOfCurrentJavaScriptDialogOnPage(WebAutomationSession&, WebPageProxy& page) override
     {
-        auto* webView = webkitWebContextGetWebViewForPage(m_session->priv->webContext, &page);
+        auto* webView = webViewForPage(page);
         if (!webView)
             return std::nullopt;
         auto dialogType = webkitWebViewGetCurrentScriptDialogType(webView);
@@ -200,7 +221,7 @@ private:
 
     API::AutomationSessionClient::BrowsingContextPresentation currentPresentationOfPage(WebAutomationSession&, WebPageProxy& page) override
     {
-        auto* webView = webkitWebContextGetWebViewForPage(m_session->priv->webContext, &page);
+        auto* webView = webViewForPage(page);
         if (!webView)
             return API::AutomationSessionClient::BrowsingContextPresentation::Window;
 
@@ -342,7 +363,102 @@ static void webkit_automation_session_class_init(WebKitAutomationSessionClass* s
         g_cclosure_marshal_generic,
         G_TYPE_NONE, 0,
         G_TYPE_NONE);
+
+#if PLATFORM(GTK) && USE(GTK4)
+    /**
+     * WebKitAutomationSession::message-received:
+     * @session: a #WebKitAutomationSession
+     * @message: a JSON automation protocol reply or event
+     *
+     * Delivers a message from an in-process automation session asynchronously
+     * on the main run loop. Closing the session discards undelivered messages.
+     *
+     * Since: 2.54
+     */
+    signals[MESSAGE_RECEIVED] = g_signal_new(
+        "message-received",
+        G_TYPE_FROM_CLASS(gObjectClass),
+        G_SIGNAL_RUN_LAST,
+        0,
+        nullptr, nullptr,
+        g_cclosure_marshal_VOID__STRING,
+        G_TYPE_NONE, 1,
+        G_TYPE_STRING);
+#endif
 }
+
+#if PLATFORM(GTK) && USE(GTK4)
+/**
+ * webkit_automation_session_send_message:
+ * @session: a #WebKitAutomationSession
+ * @message: a JSON automation protocol request
+ *
+ * Dispatches a request to an in-process automation session on the main thread.
+ * The supported methods are `Automation.getBrowsingContexts` and
+ * `Automation.navigateBrowsingContext` for HTTP and HTTPS URLs without
+ * credentials. The caller applies its navigation policy through the web
+ * view's policy decisions.
+ * Replies arrive through #WebKitAutomationSession::message-received.
+ *
+ * Returns: %TRUE if the request was dispatched
+ *
+ * Since: 2.54
+ */
+gboolean webkit_automation_session_send_message(WebKitAutomationSession* session, const char* message)
+{
+    g_return_val_if_fail(WEBKIT_IS_AUTOMATION_SESSION(session), FALSE);
+    g_return_val_if_fail(message, FALSE);
+
+#if ENABLE(REMOTE_INSPECTOR)
+    assertIsMainRunLoop();
+    auto protocolMessage = String::fromUTF8(message);
+    auto value = JSON::Value::parseJSON(protocolMessage);
+    auto request = value ? value->asObject() : nullptr;
+    if (!request || !request->getInteger("id"_s))
+        return FALSE;
+
+    auto method = request->getString("method"_s);
+    if (method == "Automation.navigateBrowsingContext"_s) {
+        auto parameters = request->getObject("params"_s);
+        if (!parameters || parameters->getString("handle"_s).isEmpty())
+            return FALSE;
+        URL url { parameters->getString("url"_s) };
+        if (!url.isValid() || !url.protocolIsInHTTPFamily() || url.hasCredentials())
+            return FALSE;
+    } else if (method != "Automation.getBrowsingContexts"_s)
+        return FALSE;
+
+    return session->priv->session->dispatchMessageFromLocalClient(WTF::move(protocolMessage));
+#else
+    return FALSE;
+#endif
+}
+
+#if ENABLE(REMOTE_INSPECTOR)
+WebKitAutomationSession* webkitAutomationSessionCreateLocal(WebKitWebContext* context, const char* sessionID)
+{
+    GRefPtr<WebKitAutomationSession> session = adoptGRef(WEBKIT_AUTOMATION_SESSION(g_object_new(WEBKIT_TYPE_AUTOMATION_SESSION, "id", sessionID, nullptr)));
+    session->priv->webContext.reset(context);
+    session->priv->isLocal = true;
+    if (!session->priv->session->connectLocalClient([weakSession = GWeakPtr<WebKitAutomationSession> { session.get() }](const String& message) {
+        if (GRefPtr<WebKitAutomationSession> session = weakSession.get())
+            gSignalEmit(session.get(), signals[MESSAGE_RECEIVED], 0, message.utf8());
+    }))
+        return nullptr;
+
+    return session.leakRef();
+}
+
+void webkitAutomationSessionCloseLocal(WebKitAutomationSession* session)
+{
+    auto* priv = session->priv;
+    // Deferred dialog callbacks keep the core session alive after the pool detaches.
+    priv->session->setClient(nullptr);
+    priv->webContext.reset();
+    priv->session->disconnectLocalClient();
+}
+#endif
+#endif
 
 #if ENABLE(REMOTE_INSPECTOR)
 static WebKitNetworkProxyMode parseProxyCapabilities(const Inspector::RemoteInspector::Client::SessionCapabilities::Proxy& proxy, WebKitNetworkProxySettings** settings)
@@ -380,7 +496,7 @@ static WebKitNetworkProxyMode parseProxyCapabilities(const Inspector::RemoteInsp
 WebKitAutomationSession* webkitAutomationSessionCreate(WebKitWebContext* webContext, const String& sessionID, const Inspector::RemoteInspector::Client::SessionCapabilities& capabilities)
 {
     auto* session = WEBKIT_AUTOMATION_SESSION(gObjectNew(WEBKIT_TYPE_AUTOMATION_SESSION, "id", sessionID.utf8()));
-    session->priv->webContext = webContext;
+    session->priv->webContext.reset(webContext);
 #if ENABLE(2022_GLIB_API)
     WebKitNetworkSession* networkSession = webkit_web_context_get_network_session_for_automation(webContext);
 #endif

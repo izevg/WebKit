@@ -137,6 +137,17 @@ webkit_web_context_get_default                      (void);
 WEBKIT_API WebKitWebContext *
 webkit_web_context_new                              (void);
 
+#if PLATFORM(GTK) && USE(GTK4)
+WEBKIT_API WebKitWebContext *
+webkit_web_context_new_with_local_automation         (const char                    *session_id);
+
+WEBKIT_API WebKitAutomationSession *
+webkit_web_context_get_local_automation_session      (WebKitWebContext              *context);
+
+WEBKIT_API void
+webkit_web_context_close_local_automation_session    (WebKitWebContext              *context);
+#endif
+
 #if !ENABLE(2022_GLIB_API)
 WEBKIT_API WebKitWebContext *
 webkit_web_context_new_ephemeral                    (void);

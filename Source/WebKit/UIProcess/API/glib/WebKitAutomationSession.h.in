@@ -73,6 +73,12 @@ webkit_automation_session_set_application_info (WebKitAutomationSession *session
 WEBKIT_API WebKitApplicationInfo *
 webkit_automation_session_get_application_info (WebKitAutomationSession *session);
 
+#if PLATFORM(GTK) && USE(GTK4)
+WEBKIT_API gboolean
+webkit_automation_session_send_message         (WebKitAutomationSession *session,
+                                                const char              *message);
+#endif
+
 G_END_DECLS
 
 #endif /* WebKitAutomationSession_h */

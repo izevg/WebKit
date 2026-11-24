@@ -80,6 +80,11 @@
 #include <wtf/text/CString.h>
 #include <wtf/text/UTF8CStringView.h>
 
+#if PLATFORM(GTK) && USE(GTK4) && ENABLE(REMOTE_INSPECTOR)
+#include <JavaScriptCore/RemoteInspectorServer.h>
+#include <wtf/MainThread.h>
+#endif
+
 #if PLATFORM(GTK)
 #include "WebKitRemoteInspectorProtocolHandler.h"
 #endif
@@ -280,6 +285,10 @@ struct _WebKitWebContextPrivate {
 #endif
     std::unique_ptr<WebKitAutomationClient> automationClient;
     GRefPtr<WebKitAutomationSession> automationSession;
+#if PLATFORM(GTK) && USE(GTK4)
+    GRefPtr<WebKitAutomationSession> localAutomationSession;
+    GRefPtr<WebKitNetworkSession> localAutomationNetworkSession;
+#endif
 #if ENABLE(2022_GLIB_API)
     GRefPtr<WebKitNetworkSession> automationNetworkSession;
 #endif
@@ -336,6 +345,24 @@ void webkitWebContextWillCloseAutomationSession(WebKitWebContext* webContext)
     webContext->priv->processPool->setAutomationSession(nullptr);
     webContext->priv->automationSession = nullptr;
 }
+
+#if PLATFORM(GTK) && USE(GTK4)
+static GRefPtr<WebKitAutomationSession> closeLocalAutomationSession(WebKitWebContextPrivate* priv)
+{
+    auto session = std::exchange(priv->localAutomationSession, nullptr);
+    if (!session)
+        return nullptr;
+
+    webkitAutomationSessionCloseLocal(session.get());
+    priv->processPool->setAutomationSession(nullptr);
+    return session;
+}
+
+WebKitNetworkSession* webkitWebContextGetLocalAutomationNetworkSession(WebKitWebContext* context)
+{
+    return context->priv->localAutomationNetworkSession.get();
+}
+#endif
 #endif
 
 #if PLATFORM(GTK)
@@ -511,6 +538,9 @@ static void webkitWebContextDispose(GObject* object)
 
     if (priv->processPool) {
 #if ENABLE(REMOTE_INSPECTOR)
+#if PLATFORM(GTK) && USE(GTK4)
+        closeLocalAutomationSession(priv);
+#endif
         if (priv->automationSession) {
             priv->processPool->setAutomationSession(nullptr);
             priv->automationSession = nullptr;
@@ -806,6 +836,96 @@ WebKitWebContext* webkit_web_context_new(void)
     return WEBKIT_WEB_CONTEXT(g_object_new(WEBKIT_TYPE_WEB_CONTEXT, nullptr));
 }
 
+#if PLATFORM(GTK) && USE(GTK4)
+/**
+ * webkit_web_context_new_with_local_automation:
+ * @session_id: an identifier for the new in-process automation session
+ *
+ * Creates a dedicated context and attaches an in-process automation session
+ * on the main thread. Its web views use a private, ephemeral network session.
+ * Only views created with #WebKitWebView:is-controlled-by-automation are
+ * exposed to the session. This context cannot enable remote automation.
+ * Remote inspector listeners are process-wide. The factory refuses to
+ * create a context if `WEBKIT_INSPECTOR_SERVER` or
+ * `WEBKIT_INSPECTOR_HTTP_SERVER` is set in the process environment,
+ * or if the remote inspector server is already running.
+ *
+ * Returns: (transfer full) (nullable): a newly created #WebKitWebContext,
+ *    or %NULL if the identifier is invalid, automation support is
+ *    unavailable, or remote inspection is configured or running
+ *
+ * Since: 2.54
+ */
+WebKitWebContext* webkit_web_context_new_with_local_automation(const char* sessionID)
+{
+#if ENABLE(REMOTE_INSPECTOR)
+    if (!sessionID || !*sessionID || !g_utf8_validate(sessionID, -1, nullptr))
+        return nullptr;
+    if (g_getenv("WEBKIT_INSPECTOR_SERVER") || g_getenv("WEBKIT_INSPECTOR_HTTP_SERVER"))
+        return nullptr;
+    // Both the direct and HTTP transports start the shared inspector server.
+    if (Inspector::RemoteInspectorServer::singleton().isRunning())
+        return nullptr;
+
+    GRefPtr<WebKitWebContext> context = adoptGRef(webkit_web_context_new());
+    GRefPtr<WebKitAutomationSession> session = adoptGRef(webkitAutomationSessionCreateLocal(context.get(), sessionID));
+    if (!session)
+        return nullptr;
+
+    auto* priv = context->priv;
+    priv->localAutomationNetworkSession = adoptGRef(webkit_network_session_new_ephemeral());
+    priv->localAutomationSession = WTF::move(session);
+    priv->processPool->setAutomationSession(&webkitAutomationSessionGetSession(priv->localAutomationSession.get()));
+    return context.leakRef();
+#else
+    UNUSED_PARAM(sessionID);
+    return nullptr;
+#endif
+}
+
+/**
+ * webkit_web_context_get_local_automation_session:
+ * @context: a #WebKitWebContext
+ *
+ * Gets the active in-process automation session associated with @context.
+ *
+ * Returns: (transfer none) (nullable): a #WebKitAutomationSession
+ *
+ * Since: 2.54
+ */
+WebKitAutomationSession* webkit_web_context_get_local_automation_session(WebKitWebContext* context)
+{
+    g_return_val_if_fail(WEBKIT_IS_WEB_CONTEXT(context), nullptr);
+
+#if ENABLE(REMOTE_INSPECTOR)
+    return context->priv->localAutomationSession.get();
+#else
+    return nullptr;
+#endif
+}
+
+/**
+ * webkit_web_context_close_local_automation_session:
+ * @context: a #WebKitWebContext
+ *
+ * Closes the in-process automation session on the main thread if it is active.
+ * Dispatch and message delivery stop immediately. The context's web views
+ * retain their ephemeral storage.
+ *
+ * Since: 2.54
+ */
+void webkit_web_context_close_local_automation_session(WebKitWebContext* context)
+{
+    g_return_if_fail(WEBKIT_IS_WEB_CONTEXT(context));
+
+#if ENABLE(REMOTE_INSPECTOR)
+    assertIsMainRunLoop();
+    if (auto session = closeLocalAutomationSession(context->priv))
+        g_signal_emit_by_name(session.get(), "will-close");
+#endif
+}
+#endif
+
 #if !ENABLE(2022_GLIB_API)
 /**
  * webkit_web_context_new_ephemeral:
@@ -930,6 +1050,12 @@ void webkit_web_context_set_automation_allowed(WebKitWebContext* context, gboole
         return;
 #if ENABLE(REMOTE_INSPECTOR)
     if (allowed) {
+#if PLATFORM(GTK) && USE(GTK4)
+        if (context->priv->localAutomationNetworkSession) {
+            g_warning("Remote automation is unavailable on a WebKitWebContext dedicated to local automation");
+            return;
+        }
+#endif
         if (Inspector::RemoteInspector::singleton().client()) {
             g_warning("Not enabling automation on WebKitWebContext because there's another context with automation enabled, only one is allowed");
             return;

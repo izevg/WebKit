@@ -466,6 +466,18 @@ void WebAutomationSession::terminate()
 
     // Already disconnected from the router above; drops queued deliveries.
     m_localClientChannel = nullptr;
+
+    // An in-process client can detach the process pool immediately after closing.
+    if (m_isLocalSession) {
+        m_loadTimer.stop();
+        m_pendingNormalNavigationInBrowsingContextCallbacksPerPage.clear();
+        m_pendingEagerNavigationInBrowsingContextCallbacksPerPage.clear();
+        m_pendingNormalNavigationInBrowsingContextCallbacksPerFrame.clear();
+        m_pendingEagerNavigationInBrowsingContextCallbacksPerFrame.clear();
+#if ENABLE(WEBDRIVER_BIDI)
+        m_bidiPendingNavigations.clear();
+#endif
+    }
 #endif
 
     if (m_client)

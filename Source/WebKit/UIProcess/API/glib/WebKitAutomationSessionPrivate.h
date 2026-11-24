@@ -26,6 +26,10 @@
 
 #if ENABLE(REMOTE_INSPECTOR)
 WebKitAutomationSession* webkitAutomationSessionCreate(WebKitWebContext*, const String& sessionID, const Inspector::RemoteInspector::Client::SessionCapabilities&);
+#if PLATFORM(GTK) && USE(GTK4)
+WebKitAutomationSession* webkitAutomationSessionCreateLocal(WebKitWebContext*, const char* sessionID);
+void webkitAutomationSessionCloseLocal(WebKitAutomationSession*);
+#endif
 #endif
 
 WebKit::WebAutomationSession& webkitAutomationSessionGetSession(WebKitAutomationSession*);

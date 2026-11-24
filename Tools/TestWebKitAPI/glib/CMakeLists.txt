@@ -143,6 +143,9 @@ ADD_WK2_TEST(TestWebProcessExtensions ${TOOLS_DIR}/TestWebKitAPI/Tests/WebKit/WK
 # UI process tests
 ADD_WK2_TEST(TestAuthentication ${TOOLS_DIR}/TestWebKitAPI/Tests/WebKit/WKWebView/glib/TestAuthentication.cpp)
 ADD_WK2_TEST(TestAutomationSession ${TOOLS_DIR}/TestWebKitAPI/Tests/WebKit/WKWebView/glib/TestAutomationSession.cpp)
+if (PORT STREQUAL "GTK" AND USE_GTK4 AND ENABLE_REMOTE_INSPECTOR)
+    ADD_WK2_TEST(TestLocalAutomationSession ${TOOLS_DIR}/TestWebKitAPI/Tests/WebKit/WKWebView/glib/TestLocalAutomationSession.cpp)
+endif ()
 ADD_WK2_TEST(TestBackForwardList ${TOOLS_DIR}/TestWebKitAPI/Tests/WebKit/WKWebView/glib/TestBackForwardList.cpp)
 ADD_WK2_TEST(TestConsoleMessage ${TOOLS_DIR}/TestWebKitAPI/Tests/WebKit/WKWebView/glib/TestConsoleMessage.cpp)
 ADD_WK2_TEST(TestCookieManager ${TOOLS_DIR}/TestWebKitAPI/Tests/WebKit/WKWebView/glib/TestCookieManager.cpp)

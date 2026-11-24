@@ -1043,6 +1043,11 @@ static void webkitWebViewConstructed(GObject* object)
 
 #if ENABLE(2022_GLIB_API)
 #if ENABLE(REMOTE_INSPECTOR)
+#if PLATFORM(GTK) && USE(GTK4)
+    if (auto* networkSession = webkitWebContextGetLocalAutomationNetworkSession(priv->context.get()))
+        priv->networkSession = networkSession;
+    else
+#endif
     if (priv->isControlledByAutomation) {
         if (!webkit_web_context_is_automation_allowed(priv->context.get()))
             g_critical("WebKitWebView is-controlled-by-automation set but automation is not allowed in the context, falling back to default session.");

@@ -42,4 +42,7 @@ GVariant* webkitWebContextInitializeWebProcessExtensions(WebKitWebContext*);
 void webkitWebContextInitializeNotificationPermissions(WebKitWebContext*);
 #if ENABLE(REMOTE_INSPECTOR)
 void webkitWebContextWillCloseAutomationSession(WebKitWebContext*);
+#if PLATFORM(GTK) && USE(GTK4)
+WebKitNetworkSession* webkitWebContextGetLocalAutomationNetworkSession(WebKitWebContext*);
+#endif
 #endif
