@@ -638,7 +638,7 @@ std::unique_ptr<CustomElementConstructionData> HTMLConstructionSite::insertHTMLE
     auto [element, elementInterface, registry] = createHTMLElementOrFindCustomElementInterface(token);
     if (elementInterface) [[unlikely]] {
         RELEASE_ASSERT(registry);
-        return makeUnique<CustomElementConstructionData>(elementInterface.releaseNonNull(), registry.releaseNonNull(), token.name(), WTF::move(token.attributes()));
+        return makeUnique<CustomElementConstructionData>(elementInterface.releaseNonNull(), registry.releaseNonNull(), protect(ownerDocumentForCurrentNode()), token.name(), WTF::move(token.attributes()));
     }
     attachLater(protect(currentNode()), *element);
     m_openElements.push(HTMLStackItem(element.releaseNonNull(), WTF::move(token)));

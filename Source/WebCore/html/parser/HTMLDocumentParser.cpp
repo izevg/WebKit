@@ -49,6 +49,7 @@
 #include "TaskSource.h"
 #include "ThrowOnDynamicMarkupInsertionCountIncrementer.h"
 #include <JavaScriptCore/JSGlobalObject.h>
+#include <optional>
 #include <wtf/SystemTracing.h>
 
 #if PLATFORM(COCOA)
@@ -240,14 +241,19 @@ void HTMLDocumentParser::runScriptsForPausedTreeBuilder()
         // https://html.spec.whatwg.org/#create-an-element-for-the-token
         {
             // Prevent document.open/write during reactions by allocating the incrementer before the reactions stack.
-            RefPtr document = this->document();
-            ThrowOnDynamicMarkupInsertionCountIncrementer incrementer(*document);
+            RefPtr parserDocument = this->document();
+            ThrowOnDynamicMarkupInsertionCountIncrementer parserIncrementer(*parserDocument);
+            // An open element can be adopted into another document between parser chunks.
+            Ref ownerDocument = constructionData->ownerDocument;
+            std::optional<ThrowOnDynamicMarkupInsertionCountIncrementer> ownerIncrementer;
+            if (ownerDocument.ptr() != parserDocument.get())
+                ownerIncrementer.emplace(ownerDocument);
 
-            protect(document->eventLoop())->performMicrotaskCheckpoint(document->vm());
+            protect(ownerDocument->eventLoop())->performMicrotaskCheckpoint(ownerDocument->vm());
 
-            CustomElementReactionStack reactionStack(document->globalObject());
+            CustomElementReactionStack reactionStack(ownerDocument->globalObject());
             Ref elementInterface = constructionData->elementInterface.get();
-            auto newElement = elementInterface->constructElementWithFallback(*document, constructionData->registry, constructionData->name,
+            auto newElement = elementInterface->constructElementWithFallback(ownerDocument, constructionData->registry, constructionData->name,
                 m_scriptRunner && !m_scriptRunner->isExecutingScript() ? ParserConstructElementWithEmptyStack::Yes : ParserConstructElementWithEmptyStack::No);
             m_treeBuilder->didCreateCustomOrFallbackElement(WTF::move(newElement), *constructionData);
         }
