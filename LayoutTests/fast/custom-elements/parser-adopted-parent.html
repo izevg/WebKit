@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Custom element construction after adopting an open parser element</title>
+<link rel="help" href="https://html.spec.whatwg.org/#create-an-element-for-the-token">
+<script src="../../resources/testharness.js"></script>
+<script src="../../resources/testharnessreport.js"></script>
+<body>
+<script>
+test(() => {
+    let connections = 0;
+    class StreamMarker extends HTMLElement {
+        connectedCallback() {
+            ++connections;
+        }
+    }
+    customElements.define('stream-marker', StreamMarker);
+
+    const stream = document.implementation.createHTMLDocument('stream');
+    stream.open();
+    stream.write('<stream-root>');
+    const root = stream.querySelector('stream-root');
+    document.body.appendChild(document.adoptNode(root));
+    stream.write('<stream-marker></stream-marker></stream-root>');
+    stream.close();
+
+    const marker = root.querySelector('stream-marker');
+    assert_true(marker instanceof StreamMarker, 'The parser constructs the custom element');
+    assert_equals(marker.ownerDocument, document);
+    assert_equals(connections, 1);
+}, 'A parser constructs custom elements in the document that owns the adopted parent');
+</script>

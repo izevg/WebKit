@@ -70,9 +70,10 @@ WTF_MAKE_TZONE_ALLOCATED_IMPL(HTMLTreeBuilder);
 using namespace ElementNames;
 using namespace HTMLNames;
 
-CustomElementConstructionData::CustomElementConstructionData(Ref<JSCustomElementInterface>&& customElementInterface, Ref<CustomElementRegistry>&& registry, const AtomString& name, Vector<Attribute>&& attributes)
+CustomElementConstructionData::CustomElementConstructionData(Ref<JSCustomElementInterface>&& customElementInterface, Ref<CustomElementRegistry>&& registry, Ref<Document>&& ownerDocument, const AtomString& name, Vector<Attribute>&& attributes)
     : elementInterface(WTF::move(customElementInterface))
     , registry(WTF::move(registry))
+    , ownerDocument(WTF::move(ownerDocument))
     , name(name)
     , attributes(WTF::move(attributes))
 {
