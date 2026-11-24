@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<script src="../../http/tests/inspector/resources/inspector-test.js"></script>
+<script>
+function test()
+{
+    const first = document.createElement("div");
+    const second = document.createElement("div");
+    const third = document.createElement("div");
+    const selected = WI.LogContentView.SelectedStyleClassName;
+    const view = Object.create(WI.LogContentView.prototype);
+    view._selectedMessages = [];
+    let visible = [first, second, third];
+    view._visibleMessageElements = () => visible;
+
+    view._updateMessagesSelection(first, false, false, false);
+    visible = [second, third];
+    view._updateMessagesSelection(third, false, true, false);
+    InspectorTest.expectThat(!first.classList.contains(selected) && third.classList.contains(selected), "A missing anchor restarts selection at the visible target.");
+
+    view._updateMessagesSelection(first, false, true, false);
+    InspectorTest.expectThat(!first.classList.contains(selected) && third.classList.contains(selected), "A removed target leaves the visible selection in place.");
+
+    visible = [first, second, third];
+    view._updateMessagesSelection(first, false, false, false);
+    view._updateMessagesSelection(third, false, true, false);
+    visible = [first, second];
+    view._updateMessagesSelection(second, false, true, false);
+    InspectorTest.expectThat(first.classList.contains(selected) && second.classList.contains(selected), "Shrinking the visible list keeps a valid selection.");
+
+    view._clearMessagesSelection();
+    view._updateMessagesSelection(second, false, true, false);
+    InspectorTest.expectThat(first.classList.contains(selected) && second.classList.contains(selected), "Clearing the selection resets the stored range.");
+
+    InspectorTest.completeTest();
+}
+</script>
+<body onload="runTest()">
+<p>Test console row selection when the visible messages change.</p>
+</body>
