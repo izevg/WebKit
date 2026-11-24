@@ -28,10 +28,13 @@
 #include "PipeWireCaptureDevice.h"
 #include <wtf/Scope.h>
 #include <wtf/SetForScope.h>
+#include <wtf/TZoneMallocInlines.h>
 #include <wtf/UUID.h>
 #include <wtf/glib/GUniquePtr.h>
 
 namespace WebCore {
+
+WTF_MAKE_STRUCT_TZONE_ALLOCATED_IMPL(GStreamerDisplayCaptureDeviceManager::ActiveSession);
 
 GStreamerDisplayCaptureDeviceManager& GStreamerDisplayCaptureDeviceManager::singleton()
 {

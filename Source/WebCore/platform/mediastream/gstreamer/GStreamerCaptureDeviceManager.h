@@ -36,6 +36,7 @@
 #include "RealtimeMediaSourceFactory.h"
 #include <wtf/Forward.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/unix/UnixFileDescriptor.h>
 
 namespace WebCore {
@@ -148,6 +149,8 @@ private:
     ~GStreamerDisplayCaptureDeviceManager();
 
     struct ActiveSession {
+        WTF_MAKE_STRUCT_TZONE_ALLOCATED(ActiveSession);
+
         DesktopPortalScreenCast::ScreencastSession portal;
         UnixFileDescriptor remote;
     };
