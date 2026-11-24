@@ -1292,7 +1292,7 @@ void WebExtensionContext::addInjectedContent(const InjectedContentVector& inject
         return;
     // Install each script once even when multiple grants cover the same page. The GTK permission
     // change handler rebuilds the installed set when any of these grants changes.
-    auto& key = **grantedMatchPatterns.begin();
+    auto& key = grantedMatchPatterns.begin()->get();
     auto& scripts = m_injectedScriptsPerPatternMap.add(key, UserScriptVector { }).iterator->value;
     auto& styleSheets = m_injectedStyleSheetsPerPatternMap.add(key, UserStyleSheetVector { }).iterator->value;
     addInjectedContent(injectedContents, key, scripts, styleSheets, nullptr, nullptr, &grantedMatchPatterns);
