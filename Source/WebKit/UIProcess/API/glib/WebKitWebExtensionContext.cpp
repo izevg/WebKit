@@ -23,6 +23,7 @@
 #if ENABLE(2022_GLIB_API)
 
 #include "WebExtensionContext.h"
+#include "WebExtensionMatchPattern.h"
 #include "WebKitError.h"
 #include "WebKitPrivate.h"
 #include "WebKitWebExtensionPrivate.h"
@@ -30,7 +31,7 @@
 #include <glib/gi18n.h>
 #include <wtf/URLParser.h>
 #include <wtf/glib/GLibExtras.h>
-#include <wtf/glib/GWeakPtr.h>
+#include <wtf/glib/GRefPtr.h>
 #include <wtf/glib/WTFGType.h>
 
 #if ENABLE(WK_WEB_EXTENSIONS)
@@ -53,7 +54,7 @@ static void gInitableInterfaceInit(GInitableIface*);
 struct _WebKitWebExtensionContextPrivate {
 #if ENABLE(WK_WEB_EXTENSIONS)
     RefPtr<WebKit::WebExtensionContext> context;
-    GWeakPtr<WebKitWebExtension> extension;
+    GRefPtr<WebKitWebExtension> extension;
     UTF8CString baseURI;
     UTF8CString optionsPageURI;
     UTF8CString overrideNewTabPageURI;
@@ -65,6 +66,48 @@ WEBKIT_DEFINE_FINAL_TYPE_WITH_CODE(
     G_IMPLEMENT_INTERFACE(G_TYPE_INITABLE, gInitableInterfaceInit))
 
 static void webkitWebExtensionContextSetWebExtension(WebKitWebExtensionContext*, WebKitWebExtension*);
+
+#if PLATFORM(GTK)
+/**
+ * webkit_web_extension_context_set_granted_hosts:
+ * @context: a #WebKitWebExtensionContext
+ * @patterns: (array zero-terminated=1): the approved match patterns
+ * @error: return location for error or %NULL
+ *
+ * Replaces the context's approved host match patterns. The embedder supplies
+ * the grants it has obtained from the user.
+ *
+ * Returns: whether all patterns were valid and the grants were updated
+ *
+ * Since: 2.56
+ */
+gboolean webkit_web_extension_context_set_granted_hosts(WebKitWebExtensionContext* context, const gchar* const* patterns, GError** error)
+{
+    g_return_val_if_fail(WEBKIT_IS_WEB_EXTENSION_CONTEXT(context), FALSE);
+    g_return_val_if_fail(patterns, FALSE);
+
+#if ENABLE(WK_WEB_EXTENSIONS)
+    auto* impl = context->priv->context.get();
+    g_return_val_if_fail(impl, FALSE);
+
+    WebKit::WebExtensionContext::PermissionMatchPatternsMap grants;
+    for (auto* pattern = patterns; *pattern; ++pattern) {
+        RefPtr<API::Error> parseError;
+        auto match = WebKit::WebExtensionMatchPattern::create(String::fromUTF8(*pattern), parseError);
+        if (!match) {
+            g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "Invalid extension host match pattern");
+            return FALSE;
+        }
+        grants.add(match.releaseNonNull(), WallTime::infinity());
+    }
+    impl->setGrantedPermissionMatchPatterns(WTF::move(grants));
+    return TRUE;
+#else
+    g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "WebExtensions are disabled");
+    return FALSE;
+#endif
+}
+#endif
 
 enum {
     PROP_0,
@@ -252,7 +295,7 @@ void webkitWebExtensionContextSetWebExtension(WebKitWebExtensionContext* context
 {
     ASSERT(WEBKIT_IS_WEB_EXTENSION_CONTEXT(context));
 
-    context->priv->extension.reset(extension);
+    context->priv->extension = extension;
 }
 
 RefPtr<WebKit::WebExtensionContext> webkitWebExtensionContextToImpl(WebKitWebExtensionContext* context)

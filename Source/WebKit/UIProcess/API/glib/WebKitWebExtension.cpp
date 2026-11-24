@@ -992,6 +992,40 @@ WebKitWebExtensionMatchPattern** webkit_web_extension_get_all_requested_match_pa
     return reinterpret_cast<WebKitWebExtensionMatchPattern**>(g_ptr_array_free(returnValue, FALSE));
 }
 
+#if PLATFORM(GTK)
+/**
+ * webkit_web_extension_get_requested_host_match_patterns:
+ * @extension: a #WebKitWebExtension
+ *
+ * Returns the sites requested by the extension's required host permissions and static
+ * content scripts. Sites allowed to send messages to the extension and optional host
+ * permissions are distinct declarations and are not included.
+ *
+ * Returns: (array zero-terminated=1) (element-type WebKitWebExtensionMatchPattern) (transfer full): the requested host match patterns
+ *
+ * Since: 2.56
+ */
+WebKitWebExtensionMatchPattern** webkit_web_extension_get_requested_host_match_patterns(WebKitWebExtension* extension)
+{
+    g_return_val_if_fail(WEBKIT_IS_WEB_EXTENSION(extension), nullptr);
+
+    auto& impl = *extension->priv->extension;
+    auto patterns = impl.requestedPermissionMatchPatterns();
+    for (auto& content : impl.staticInjectedContents()) {
+        for (Ref pattern : content.includeMatchPatterns)
+            patterns.add(pattern);
+    }
+
+    if (patterns.isEmpty())
+        return nullptr;
+    auto* result = g_ptr_array_new();
+    for (Ref pattern : patterns)
+        g_ptr_array_add(result, webkitWebExtensionMatchPatternCreate(pattern));
+    g_ptr_array_add(result, nullptr);
+    return reinterpret_cast<WebKitWebExtensionMatchPattern**>(g_ptr_array_free(result, FALSE));
+}
+#endif
+
 /**
  * webkit_web_extension_get_has_background_content:
  * @extension: a #WebKitWebExtension
@@ -1250,6 +1284,13 @@ WebKitWebExtensionMatchPattern** webkit_web_extension_get_all_requested_match_pa
 {
     return nullptr;
 }
+
+#if PLATFORM(GTK)
+WebKitWebExtensionMatchPattern** webkit_web_extension_get_requested_host_match_patterns(WebKitWebExtension*)
+{
+    return nullptr;
+}
+#endif
 
 gboolean webkit_web_extension_get_has_background_content(WebKitWebExtension* extension)
 {

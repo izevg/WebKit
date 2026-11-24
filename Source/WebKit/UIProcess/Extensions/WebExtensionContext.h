@@ -872,7 +872,11 @@ private:
 
     void addInjectedContent(const InjectedContentVector&, WebExtensionMatchPattern&);
     void addInjectedContent(const InjectedContentVector&, WebExtensionMatchPattern&, const TabInjectionTarget&);
-    void addInjectedContent(const InjectedContentVector&, WebExtensionMatchPattern&, UserScriptVector&, UserStyleSheetVector&, RefPtr<WebPageProxy>, TabInjectedContent* = nullptr);
+    void addInjectedContent(const InjectedContentVector&, WebExtensionMatchPattern&, UserScriptVector&, UserStyleSheetVector&, RefPtr<WebPageProxy>, TabInjectedContent* = nullptr
+#if PLATFORM(GTK)
+        , const MatchPatternSet* = nullptr
+#endif
+    );
     void addInjectedContent(const InjectedContentVector&, WebExtensionTab&, WebExtensionMatchPattern&);
 
     void addTemporaryInjectedContent(const InjectedContentVector&);

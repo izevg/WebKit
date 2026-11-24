@@ -74,6 +74,13 @@ webkit_web_extension_context_load_background_content_finish                 (Web
                                                                              GAsyncResult               *result,
                                                                              GError                    **error);
 
+#if PLATFORM(GTK)
+WEBKIT_API gboolean
+webkit_web_extension_context_set_granted_hosts                             (WebKitWebExtensionContext  *context,
+                                                                             const gchar * const        *patterns,
+                                                                             GError                    **error);
+#endif
+
 G_END_DECLS
 
 #endif // ENABLE(2022_GLIB_API)

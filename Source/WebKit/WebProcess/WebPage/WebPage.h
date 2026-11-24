@@ -1959,7 +1959,7 @@ public:
 #if ENABLE(WK_WEB_EXTENSIONS)
     WebExtensionControllerProxy* webExtensionControllerProxy() const
     {
-#if PLATFORM(COCOA)
+#if PLATFORM(COCOA) || PLATFORM(GTK)
         return m_webExtensionController.get();
 #else
         return nullptr;
@@ -3171,7 +3171,7 @@ private:
 
     const Ref<WebUserContentController> m_userContentController;
 
-#if ENABLE(WK_WEB_EXTENSIONS) && PLATFORM(COCOA)
+#if ENABLE(WK_WEB_EXTENSIONS) && (PLATFORM(COCOA) || PLATFORM(GTK))
     const RefPtr<WebExtensionControllerProxy> m_webExtensionController;
 #endif
 

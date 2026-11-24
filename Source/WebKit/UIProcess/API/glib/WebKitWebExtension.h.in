@@ -96,6 +96,11 @@ webkit_web_extension_get_optional_permission_match_patterns  (WebKitWebExtension
 WEBKIT_API WebKitWebExtensionMatchPattern **
 webkit_web_extension_get_all_requested_match_patterns        (WebKitWebExtension *extension);
 
+#if PLATFORM(GTK)
+WEBKIT_API WebKitWebExtensionMatchPattern **
+webkit_web_extension_get_requested_host_match_patterns      (WebKitWebExtension *extension);
+#endif
+
 WEBKIT_API gboolean
 webkit_web_extension_get_has_background_content              (WebKitWebExtension *extension);
 

@@ -142,6 +142,9 @@
 
 #if ENABLE(WK_WEB_EXTENSIONS)
 #include "WebKitWebExtensionContextPrivate.h"
+#if PLATFORM(GTK)
+#include "WebKitWebExtensionControllerPrivate.h"
+#endif
 #endif
 
 using namespace WebKit;
@@ -275,6 +278,9 @@ enum {
 
 #if ENABLE(WK_WEB_EXTENSIONS)
     PROP_WEB_EXTENSION_CONTEXT,
+#if PLATFORM(GTK)
+    PROP_WEB_EXTENSION_CONTROLLER,
+#endif
 #endif
 
     N_PROPERTIES,
@@ -469,6 +475,9 @@ struct _WebKitWebViewPrivate {
 #endif
 #if ENABLE(WK_WEB_EXTENSIONS)
     GWeakPtr<WebKitWebExtensionContext> webExtensionContext;
+#if PLATFORM(GTK)
+    GRefPtr<WebKitWebExtensionController> webExtensionController;
+#endif
 #endif
 };
 
@@ -901,6 +910,25 @@ static void webkitWebViewWatchForChangesInFavicon(WebKitWebView* webView)
 }
 #endif
 
+#if ENABLE(WK_WEB_EXTENSIONS) && PLATFORM(GTK)
+static void scopeUserContentManagerToExtensions(GRefPtr<WebKitUserContentManager>& manager, WebKitWebExtensionController* controller)
+{
+    using Scope = GRefPtr<WebKitWebExtensionController>;
+    static auto scopeKey = g_quark_from_static_string("webkit-extension-content-manager-scope");
+    auto* current = static_cast<Scope*>(g_object_get_qdata(G_OBJECT(manager.get()), scopeKey));
+    if (current && current->get() == controller)
+        return;
+
+    // User scripts are installed on the manager. Sharing one across controller scopes would
+    // allow an unrelated view to execute the scripts even without their extension bindings.
+    if (current)
+        manager = adoptGRef(webkit_user_content_manager_new());
+    g_object_set_qdata_full(G_OBJECT(manager.get()), scopeKey, new Scope(controller), [](gpointer scope) {
+        delete static_cast<Scope*>(scope);
+    });
+}
+#endif
+
 static Ref<API::PageConfiguration> webkitWebViewCreatePageConfiguration(WebKitWebView* webView)
 {
     auto* priv = webView->priv;
@@ -910,7 +938,6 @@ static Ref<API::PageConfiguration> webkitWebViewCreatePageConfiguration(WebKitWe
     pageConfiguration->preferences().setAllowTestOnlyIPC(pageConfiguration->allowTestOnlyIPC());
     pageConfiguration->preferences().setUsesSingleWebProcess(pageConfiguration->processPool().usesSingleWebProcess());
     pageConfiguration->setRelatedPage(priv->relatedView ? &webkitWebViewGetPage(priv->relatedView) : nullptr);
-    pageConfiguration->setUserContentController(priv->userContentManager ? webkitUserContentManagerGetUserContentControllerProxy(priv->userContentManager.get()) : nullptr);
     pageConfiguration->setControlledByAutomation(priv->isControlledByAutomation);
 
     switch (priv->webExtensionMode) {
@@ -946,7 +973,22 @@ static Ref<API::PageConfiguration> webkitWebViewCreatePageConfiguration(WebKitWe
 #else
     auto* manager = priv->websiteDataManager ? priv->websiteDataManager.get() : webkit_web_context_get_website_data_manager(priv->context.get());
 #endif
-    pageConfiguration->setWebsiteDataStore(&webkitWebsiteDataManagerGetDataStore(manager));
+    auto& dataStore = webkitWebsiteDataManagerGetDataStore(manager);
+    pageConfiguration->setWebsiteDataStore(&dataStore);
+#if ENABLE(WK_WEB_EXTENSIONS) && PLATFORM(GTK)
+    if (priv->webExtensionController) {
+        auto controller = webkitWebExtensionControllerForDataStore(priv->webExtensionController.get(), dataStore);
+        if (controller)
+            pageConfiguration->setWebExtensionController(WTF::move(controller));
+        else {
+            g_warning("The web extension controller belongs to a different network session");
+            priv->webExtensionController = nullptr;
+        }
+    }
+    if (priv->userContentManager)
+        scopeUserContentManagerToExtensions(priv->userContentManager, priv->webExtensionController.get());
+#endif
+    pageConfiguration->setUserContentController(priv->userContentManager ? webkitUserContentManagerGetUserContentControllerProxy(priv->userContentManager.get()) : nullptr);
 
     pageConfiguration->setDefaultWebsitePolicies(webkitWebsitePoliciesGetWebsitePolicies(priv->websitePolicies.get()));
 
@@ -1223,6 +1265,11 @@ static void webkitWebViewSetProperty(GObject* object, guint propId, const GValue
     case PROP_WEB_EXTENSION_CONTEXT:
         webView->priv->webExtensionContext.reset(static_cast<WebKitWebExtensionContext*>(g_value_get_object(value)));
         break;
+#if PLATFORM(GTK)
+    case PROP_WEB_EXTENSION_CONTROLLER:
+        webView->priv->webExtensionController = static_cast<WebKitWebExtensionController*>(g_value_get_object(value));
+        break;
+#endif
 #endif
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, propId, paramSpec);
@@ -1358,6 +1405,11 @@ static void webkitWebViewGetProperty(GObject* object, guint propId, GValue* valu
     case PROP_WEB_EXTENSION_CONTEXT:
         g_value_set_object(value, webkitWebViewGetWebExtensionContext(webView));
         break;
+#if PLATFORM(GTK)
+    case PROP_WEB_EXTENSION_CONTROLLER:
+        g_value_set_object(value, webView->priv->webExtensionController.get());
+        break;
+#endif
 #endif
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, propId, paramSpec);
@@ -1994,6 +2046,22 @@ static void webkit_web_view_class_init(WebKitWebViewClass* webViewClass)
         nullptr, nullptr,
         WEBKIT_TYPE_WEB_EXTENSION_CONTEXT,
         static_cast<GParamFlags>(WEBKIT_PARAM_WRITABLE | G_PARAM_CONSTRUCT_ONLY));
+#if PLATFORM(GTK)
+    /**
+     * WebKitWebView:web-extension-controller:
+     *
+     * The controller for extension content in this view's network session.
+     * Views with different extension controllers cannot share a user content manager.
+     * A conflicting manager is replaced with a fresh manager.
+     *
+     * Since: 2.56
+     */
+    sObjProperties[PROP_WEB_EXTENSION_CONTROLLER] = g_param_spec_object(
+        "web-extension-controller",
+        nullptr, nullptr,
+        WEBKIT_TYPE_WEB_EXTENSION_CONTROLLER,
+        static_cast<GParamFlags>(WEBKIT_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
+#endif
 #endif
 
     g_object_class_install_properties(gObjectClass, N_PROPERTIES, sObjProperties.data());

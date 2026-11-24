@@ -1261,6 +1261,7 @@ void WebExtensionContext::addInjectedContent(const InjectedContentVector& inject
     if (!safeToInjectContent())
         return;
 
+#if !PLATFORM(GTK)
     // Only add content for one "all hosts" pattern if the extension has the permission.
     // This avoids duplicate injected content if individual hosts are granted in addition to "all hosts".
     if (hasAccessToAllHosts()) {
@@ -1272,6 +1273,7 @@ void WebExtensionContext::addInjectedContent(const InjectedContentVector& inject
         }
         return;
     }
+#endif
 
     MatchPatternSet grantedMatchPatterns;
     for (auto& pattern : currentPermissionMatchPatterns())
@@ -1285,6 +1287,16 @@ void WebExtensionContext::addInjectedContent(const InjectedContentVector& inject
     if (!safeToInjectContent())
         return;
 
+#if PLATFORM(GTK)
+    if (grantedMatchPatterns.isEmpty())
+        return;
+    // Install each script once even when multiple grants cover the same page. The GTK permission
+    // change handler rebuilds the installed set when any of these grants changes.
+    auto& key = **grantedMatchPatterns.begin();
+    auto& scripts = m_injectedScriptsPerPatternMap.add(key, UserScriptVector { }).iterator->value;
+    auto& styleSheets = m_injectedStyleSheetsPerPatternMap.add(key, UserStyleSheetVector { }).iterator->value;
+    addInjectedContent(injectedContents, key, scripts, styleSheets, nullptr, nullptr, &grantedMatchPatterns);
+#else
     if (hasAccessToAllHosts()) {
         // If this is not currently granting "all hosts", then we can return early. This means
         // the "all hosts" pattern injected content was added already, and no content needs added.
@@ -1308,7 +1320,65 @@ void WebExtensionContext::addInjectedContent(const InjectedContentVector& inject
 
     for (auto& pattern : grantedMatchPatterns)
         addInjectedContent(injectedContents, pattern);
+#endif
 }
+
+#if PLATFORM(GTK)
+static bool includesScriptPath(const String& scope, const String& path)
+{
+    if (scope == path || scope == "/*"_s)
+        return true;
+
+    auto wildcard = path.find('*');
+    if (wildcard == notFound)
+        return matchesWildcardPattern(scope, path);
+
+    // With a sole trailing wildcard, the scope contains every path with its literal prefix.
+    auto scopeWildcard = scope.find('*');
+    return scopeWildcard != notFound && scopeWildcard == scope.length() - 1
+        && StringView(path).left(wildcard).startsWith(StringView(scope).left(scopeWildcard));
+}
+
+static RefPtr<WebExtensionMatchPattern> grantedScriptPattern(WebExtensionMatchPattern& declaredPattern, WebExtensionMatchPattern& grantedPattern)
+{
+    Ref declared = declaredPattern.matchesAllURLs() ? WebExtensionMatchPattern::allHostsAndSchemesMatchPattern() : Ref { declaredPattern };
+    Ref granted = grantedPattern.matchesAllURLs() ? WebExtensionMatchPattern::allHostsAndSchemesMatchPattern() : Ref { grantedPattern };
+    auto& declaration = declared->pattern();
+    auto& grant = granted->pattern();
+
+    auto isWebScheme = [](const String& scheme) {
+        return scheme == "http"_s || scheme == "https"_s || scheme == "*"_s;
+    };
+    if (!isWebScheme(declaration.scheme()) || !isWebScheme(grant.scheme()))
+        return nullptr;
+
+    String scheme;
+    if (declaration.matchesScheme(grant))
+        scheme = grant.scheme();
+    else if (grant.matchesScheme(declaration))
+        scheme = declaration.scheme();
+    else
+        return nullptr;
+
+    String host;
+    if (equalIgnoringASCIICase(declaration.host(), grant.host()))
+        host = declaration.matchSubdomains() ? granted->host() : declared->host();
+    else if (declaration.matchesHost(grant))
+        host = granted->host();
+    else if (grant.matchesHost(declaration))
+        host = declared->host();
+    else
+        return nullptr;
+
+    // Skip intersections of unrelated wildcard paths that cannot be represented by
+    // selecting one of the two patterns.
+    if (includesScriptPath(declaration.path(), grant.path()))
+        return WebExtensionMatchPattern::getOrCreate(scheme, host, grant.path());
+    if (includesScriptPath(grant.path(), declaration.path()))
+        return WebExtensionMatchPattern::getOrCreate(scheme, host, declaration.path());
+    return nullptr;
+}
+#endif
 
 NODELETE static WebCore::UserScriptInjectionTime toImpl(WebExtension::InjectionTime injectionTime)
 {
@@ -1360,7 +1430,18 @@ void WebExtensionContext::addInjectedContent(const InjectedContentVector& inject
     addInjectedContent(injectedContents, pattern, tabContent.userScripts, tabContent.userStyleSheets, injectionTarget.page.ptr(), &tabContent);
 }
 
-void WebExtensionContext::addInjectedContent(const InjectedContentVector& injectedContents, WebExtensionMatchPattern& pattern, UserScriptVector& originInjectedScripts, UserStyleSheetVector& originInjectedStyleSheets, RefPtr<WebPageProxy> page, TabInjectedContent* tabContent)
+#if PLATFORM(GTK)
+// Grant changes rebuild the script registrations. Let the document's injection phase run the scripts once.
+static constexpr auto extensionUserScriptInjectionMode = InjectUserScriptImmediately::No;
+#else
+static constexpr auto extensionUserScriptInjectionMode = InjectUserScriptImmediately::Yes;
+#endif
+
+void WebExtensionContext::addInjectedContent(const InjectedContentVector& injectedContents, WebExtensionMatchPattern& pattern, UserScriptVector& originInjectedScripts, UserStyleSheetVector& originInjectedStyleSheets, RefPtr<WebPageProxy> page, TabInjectedContent* tabContent
+#if PLATFORM(GTK)
+    , const MatchPatternSet* grantedMatchPatterns
+#endif
+)
 {
     if (!safeToInjectContent())
         return;
@@ -1373,6 +1454,7 @@ void WebExtensionContext::addInjectedContent(const InjectedContentVector& inject
 
     auto& deniedMatchPatterns = deniedPermissionMatchPatterns();
     for (auto& deniedEntry : deniedMatchPatterns) {
+#if !PLATFORM(GTK)
         // Granted host patterns always win over revoked host patterns. Skip any revoked "all hosts" patterns.
         // This supports the case where "all hosts" is revoked and a handful of specific hosts are granted.
         Ref deniedMatchPattern = deniedEntry.key;
@@ -1383,6 +1465,9 @@ void WebExtensionContext::addInjectedContent(const InjectedContentVector& inject
         // the size of the exclude match patterns list to speed up processing.
         if (!pattern.matchesPattern(deniedMatchPattern, { WebExtensionMatchPattern::Options::IgnorePaths, WebExtensionMatchPattern::Options::MatchBidirectionally }))
             continue;
+#else
+        Ref deniedMatchPattern = deniedEntry.key;
+#endif
 
         for (const auto& deniedMatchPatternString : deniedMatchPattern->expandedStrings(expandOptions))
             baseExcludeMatchPatternsSet.add(deniedMatchPatternString);
@@ -1391,9 +1476,29 @@ void WebExtensionContext::addInjectedContent(const InjectedContentVector& inject
     auto& userContentControllers = this->userContentControllers();
 
     for (auto& injectedContentData : borrow(injectedContents)) {
+#if PLATFORM(GTK)
+        // The GTK runtime supports isolated scripts and frame URLs that can be matched
+        // directly. WebKit does not enforce content script include/exclude globs here.
+        if (injectedContentData.contentWorldType != WebExtensionContentWorldType::ContentScript
+            || injectedContentData.matchParentFrame != WebCore::UserContentMatchParentFrame::Never
+            || !injectedContentData.includeGlobPatternStrings.isEmpty()
+            || !injectedContentData.excludeGlobPatternStrings.isEmpty())
+            continue;
+#endif
         HashSet<String> includeMatchPatternsSet;
 
         for (auto& includeMatchPattern : injectedContentData.includeMatchPatterns) {
+#if PLATFORM(GTK)
+            auto addGrantedIntersection = [&](WebExtensionMatchPattern& grant) {
+                if (auto intersection = grantedScriptPattern(includeMatchPattern, grant))
+                    includeMatchPatternsSet.add(intersection->string());
+            };
+            if (grantedMatchPatterns) {
+                for (auto& grant : *grantedMatchPatterns)
+                    addGrantedIntersection(grant);
+            } else
+                addGrantedIntersection(pattern);
+#else
             // Paths are not matched here since all we need to match at this point is scheme and host.
             // The path matching will happen in WebKit when deciding to inject content into a frame.
 
@@ -1426,6 +1531,7 @@ void WebExtensionContext::addInjectedContent(const InjectedContentVector& inject
 
             for (const auto& restrictedPattern : restrictedPattern->expandedStrings(expandOptions))
                 includeMatchPatternsSet.add(restrictedPattern);
+#endif
         }
 
         if (includeMatchPatternsSet.isEmpty())
@@ -1465,10 +1571,10 @@ void WebExtensionContext::addInjectedContent(const InjectedContentVector& inject
             // Content for an activeTab grant is tagged with the page ID, so WebCore injects it only into that page even if the controller is shared.
             // Other content is added to every controller.
             if (page)
-                page->userContentController().addUserScript(userScript, InjectUserScriptImmediately::Yes);
+                page->userContentController().addUserScript(userScript, extensionUserScriptInjectionMode);
             else {
                 for (Ref userContentController : userContentControllers)
-                    userContentController->addUserScript(userScript, InjectUserScriptImmediately::Yes);
+                    userContentController->addUserScript(userScript, extensionUserScriptInjectionMode);
             }
 
             // If temporary, keep track of the registered script for the tab.
@@ -1530,7 +1636,7 @@ void WebExtensionContext::addInjectedContent(WebUserContentControllerProxy& user
 
     for (auto& entry : m_injectedScriptsPerPatternMap) {
         for (auto& userScript : borrow(entry.value))
-            userContentController.addUserScript(userScript, InjectUserScriptImmediately::Yes);
+            userContentController.addUserScript(userScript, extensionUserScriptInjectionMode);
     }
 
     for (auto& entry : m_injectedStyleSheetsPerPatternMap) {
@@ -1627,10 +1733,12 @@ void WebExtensionContext::removeInjectedContent(const MatchPatternSet& removedMa
     for (auto& removedPattern : removedMatchPatterns)
         removeInjectedContent(removedPattern);
 
+#if !PLATFORM(GTK)
     // If "all hosts" was removed, then we need to add back any individual granted hosts,
     // now that the catch all pattern has been removed.
     if (WebExtensionMatchPattern::patternsMatchAllHosts(removedMatchPatterns))
         addInjectedContent();
+#endif
 }
 
 void WebExtensionContext::removeInjectedContent(WebExtensionMatchPattern& pattern)

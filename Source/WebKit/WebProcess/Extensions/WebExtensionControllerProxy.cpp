@@ -38,6 +38,14 @@
 #include <wtf/NeverDestroyed.h>
 #include <wtf/TZoneMallocInlines.h>
 
+#if PLATFORM(GTK)
+#include "JSWebExtensionWrapper.h"
+#include "WebExtensionAPINamespace.h"
+#include <JavaScriptCore/APICast.h>
+#include <WebCore/DOMWrapperWorld.h>
+#include <WebCore/JSDOMGlobalObject.h>
+#endif
+
 namespace WebKit {
 
 using namespace WebCore;
@@ -148,6 +156,42 @@ RefPtr<WebExtensionContextProxy> WebExtensionControllerProxy::extensionContext(W
 
     return extensionContext(frame.url());
 }
+
+#if PLATFORM(GTK)
+void WebExtensionControllerProxy::globalObjectIsAvailableForFrame(WebPage&, WebFrame& frame, DOMWrapperWorld& world)
+{
+    if (world.isNormal())
+        return;
+
+    RefPtr extension = extensionContext(frame, world);
+    auto context = frame.jsContextForWorld(world);
+    if (!extension || !context)
+        return;
+
+    auto globalObject = JSContextGetGlobalObject(context);
+    RefPtr browser = toJSString("browser"_s);
+    if (!browser)
+        return;
+
+    auto namespaceObject = JSObjectGetProperty(context, globalObject, browser.get(), nullptr);
+    if (namespaceObject && JSValueIsObject(context, namespaceObject))
+        return;
+
+    extension->addFrameWithExtensionContent(frame);
+    extension->setContentScriptWorld(world);
+    constexpr auto contentWorldType = WebExtensionContentWorldType::ContentScript;
+    namespaceObject = toJS(context, WebExtensionAPINamespace::create(contentWorldType, *extension).ptr());
+    JSObjectSetProperty(context, globalObject, browser.get(), namespaceObject, kJSPropertyAttributeNone, nullptr);
+    if (RefPtr chrome = toJSString("chrome"_s))
+        JSObjectSetProperty(context, globalObject, chrome.get(), namespaceObject, kJSPropertyAttributeNone, nullptr);
+
+    if (auto* domGlobalObject = dynamicDowncast<JSDOMGlobalObject>(toJS(context))) {
+        domGlobalObject->addScriptErrorCallback([extension = extension.releaseNonNull()](const String& message, const String& sourceURL, unsigned lineNumber, unsigned columnNumber) {
+            extension->didEncounterScriptError(message, sourceURL, lineNumber, columnNumber, WebExtensionContentWorldType::ContentScript);
+        });
+    }
+}
+#endif
 
 } // namespace WebKit
 

@@ -55,7 +55,7 @@ constexpr auto freshlyCreatedTimeout = 5_s;
 
 static void addContextMessageReceivers(WebProcessPool& processPool, WebExtensionContext& context)
 {
-#if PLATFORM(COCOA)
+#if PLATFORM(COCOA) || PLATFORM(GTK)
     processPool.addMessageReceiver(Messages::WebExtensionContext::messageReceiverName(), context.identifier(), context);
     processPool.addMessageReceiver(Messages::WebExtensionContext::messageReceiverName(), context.privilegedIdentifier(), context);
 #else
@@ -66,7 +66,7 @@ static void addContextMessageReceivers(WebProcessPool& processPool, WebExtension
 
 static void removeContextMessageReceivers(WebProcessPool& processPool, WebExtensionContext& context)
 {
-#if PLATFORM(COCOA)
+#if PLATFORM(COCOA) || PLATFORM(GTK)
     processPool.removeMessageReceiver(Messages::WebExtensionContext::messageReceiverName(), context.identifier());
     processPool.removeMessageReceiver(Messages::WebExtensionContext::messageReceiverName(), context.privilegedIdentifier());
 #else

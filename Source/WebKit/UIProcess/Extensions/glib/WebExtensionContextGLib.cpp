@@ -20,7 +20,9 @@
 #include "config.h"
 #include "WebExtensionContext.h"
 
+#include "APIContentWorld.h"
 #include "WebExtensionContextProxyMessages.h"
+#include "WebExtensionController.h"
 #include "WebExtensionPermission.h"
 #include "WebKitNavigationActionPrivate.h"
 #include "WebKitSettingsPrivate.h"
@@ -586,26 +588,81 @@ void WebExtensionContext::loadDeclarativeNetRequestRules(CompletionHandler<void(
     completionHandler(false);
 }
 
-std::expected<bool, RefPtr<API::Error>> WebExtensionContext::load(WebExtensionController&, String)
+std::expected<bool, RefPtr<API::Error>> WebExtensionContext::load(WebExtensionController& controller, String storageDirectory)
 {
+#if PLATFORM(GTK)
+    if (isLoaded())
+        return makeUnexpected(createError(Error::AlreadyLoaded));
+
+    m_storageDirectory = WTF::move(storageDirectory);
+    m_extensionController = controller;
+    m_contentScriptWorld = API::ContentWorld::sharedWorldWithName(makeString("WebExtension-"_s, m_uniqueIdentifier));
+    readStateFromStorage();
+
+    // The process needs the extension identity before any isolated script is installed.
+    m_safeToInjectContent = true;
+    controller.dispatchDidLoad(*this);
+    addInjectedContent();
+    return true;
+#else
+    UNUSED_PARAM(controller);
+    UNUSED_PARAM(storageDirectory);
     notImplemented();
     return makeUnexpected(createError(Error::Unknown));
+#endif
 }
 
 std::expected<bool, RefPtr<API::Error>> WebExtensionContext::unload()
 {
+#if PLATFORM(GTK)
+    if (!isLoaded())
+        return makeUnexpected(createError(Error::NotLoaded));
+
+    removeAllInjectedContent();
+    unloadBackgroundWebView();
+    m_safeToInjectContent = false;
+    m_privilegedIdentifier = std::nullopt;
+    m_eventListenerFrames.clear();
+    m_registeredScriptsMap.clear();
+    m_dynamicallyInjectedUserStyleSheets.clear();
+    m_injectedScriptsPerPatternMap.clear();
+    m_injectedStyleSheetsPerPatternMap.clear();
+    m_contentScriptWorld = nullptr;
+    m_extensionController = nullptr;
+    return true;
+#else
     notImplemented();
     return makeUnexpected(createError(Error::Unknown));
+#endif
 }
 
-void WebExtensionContext::permissionsDidChange(PermissionNotification, const PermissionsSet&)
+void WebExtensionContext::permissionsDidChange(PermissionNotification, const PermissionsSet& permissions)
 {
+#if PLATFORM(GTK)
+    if (permissions.isEmpty())
+        return;
+
+    if (RefPtr controller = extensionController())
+        controller->sendToAllProcesses(Messages::WebExtensionContextProxy::UpdateGrantedPermissions(m_grantedPermissions), identifier());
+#else
+    UNUSED_PARAM(permissions);
     notImplemented();
+#endif
 }
 
-void WebExtensionContext::permissionsDidChange(PermissionNotification, const MatchPatternSet&)
+void WebExtensionContext::permissionsDidChange(PermissionNotification, const MatchPatternSet& matchPatterns)
 {
+#if PLATFORM(GTK)
+    if (matchPatterns.isEmpty())
+        return;
+
+    clearCachedPermissionStates();
+    if (safeToInjectContent())
+        updateInjectedContent();
+#else
+    UNUSED_PARAM(matchPatterns);
     notImplemented();
+#endif
 }
 
 void WebExtensionContext::removePage(WebPageProxy&)

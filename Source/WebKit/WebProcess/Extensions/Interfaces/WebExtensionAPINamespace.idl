@@ -59,7 +59,7 @@
 
     [Dynamic, Platform=COCOA] readonly attribute WebExtensionAPILocalization i18n;
 
-    [Dynamic, Platform=COCOA] readonly attribute WebExtensionAPIRuntime runtime;
+    [Dynamic] readonly attribute WebExtensionAPIRuntime runtime;
 
     [MainWorldOnly, Dynamic, Platform=COCOA] readonly attribute WebExtensionAPIMenus menus;
 

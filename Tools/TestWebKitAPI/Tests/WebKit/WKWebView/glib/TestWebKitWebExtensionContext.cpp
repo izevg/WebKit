@@ -22,6 +22,9 @@
 #if ENABLE(WK_WEB_EXTENSIONS)
 
 #include "TestMain.h"
+#if PLATFORM(GTK)
+#include "WebViewTest.h"
+#endif
 #include <WebKitWebExtensionInternal.h>
 #include <wtf/HashMap.h>
 #include <wtf/glib/GLibExtras.h>
@@ -347,6 +350,164 @@ static void testBaseURI(Test* test, gconstpointer)
     g_assert_cmpstr(webkit_web_extension_context_get_override_new_tab_page_uri(context.get()), ==, newTabPageURI.get());
 }
 
+#if PLATFORM(GTK)
+static void testGrantedContentWorld(WebViewTest* test, gconstpointer)
+{
+    constexpr auto manifest = R"({
+        "manifest_version": 3,
+        "name": "Content world test",
+        "version": "1.0",
+        "host_permissions": ["https://required.example/*"],
+        "optional_host_permissions": ["https://optional.example/*"],
+        "externally_connectable": {"matches": ["https://external.example/*"]},
+        "content_scripts": [{
+            "matches": ["*://*/fixture/*"],
+            "js": ["content.js"],
+            "run_at": "document_end"
+        }, {
+            "matches": ["*://*/fixture/*"],
+            "js": ["main.js"],
+            "world": "MAIN",
+            "run_at": "document_end"
+        }, {
+            "matches": ["*://*/fixture/*"],
+            "include_globs": ["*fixture/glob/page"],
+            "js": ["glob.js"],
+            "run_at": "document_end"
+        }]
+    })";
+    constexpr auto script = R"({
+        document.documentElement.dataset.extensionScriptRuns = Number(document.documentElement.dataset.extensionScriptRuns || "0") + 1;
+        const listener = () => {};
+        chrome.runtime.onMessage.addListener(listener);
+        if (chrome.runtime.onMessage.hasListener(listener))
+            document.documentElement.dataset.listenerRegistered = "yes";
+    })";
+    GUniqueOutPtr<GError> error;
+    GRefPtr extension = adoptGRef(webkitWebExtensionCreate({
+        { "manifest.json"_s, createGBytes(manifest) },
+        { "content.js"_s, createGBytes(script) },
+        { "main.js"_s, createGBytes("document.documentElement.dataset.mainWorldScriptRan = 'yes';") },
+        { "glob.js"_s, createGBytes("document.documentElement.dataset.globScriptRan = 'yes';") },
+    }, &error.outPtr()));
+    g_assert_no_error(error.get());
+    auto** requestedHosts = webkit_web_extension_get_requested_host_match_patterns(extension.get());
+    g_assert_nonnull(requestedHosts);
+    bool foundContentHost = false;
+    bool foundRequiredHost = false;
+    unsigned hostCount = 0;
+    for (auto** current = requestedHosts; *current; ++current) {
+        auto* pattern = webkit_web_extension_match_pattern_get_string(*current);
+        foundContentHost |= !g_strcmp0(pattern, "*://*/fixture/*");
+        foundRequiredHost |= !g_strcmp0(pattern, "https://required.example/*");
+        ++hostCount;
+        webkit_web_extension_match_pattern_unref(*current);
+    }
+    g_free(requestedHosts);
+    g_assert_cmpuint(hostCount, ==, 2);
+    g_assert_true(foundContentHost);
+    g_assert_true(foundRequiredHost);
+    GRefPtr context = adoptGRef(webkit_web_extension_context_new_for_extension(extension.get(), &error.outPtr()));
+    g_assert_no_error(error.get());
+    extension.clear();
+
+    GRefPtr session = adoptGRef(webkit_network_session_new_ephemeral());
+    GRefPtr controller = adoptGRef(webkit_web_extension_controller_new(session.get()));
+    GRefPtr webView = adoptGRef(WEBKIT_WEB_VIEW(g_object_ref_sink(g_object_new(WEBKIT_TYPE_WEB_VIEW,
+        "network-session", session.get(),
+        "web-extension-controller", controller.get(),
+        nullptr))));
+    GRefPtr secondSession = adoptGRef(webkit_network_session_new_ephemeral());
+    auto makeForeignView = [&] {
+        return adoptGRef(WEBKIT_WEB_VIEW(g_object_ref_sink(g_object_new(WEBKIT_TYPE_WEB_VIEW,
+            "network-session", secondSession.get(),
+            "user-content-manager", webkit_web_view_get_user_content_manager(webView.get()),
+            nullptr))));
+    };
+    GRefPtr earlyForeignView = makeForeignView();
+
+    auto checkScriptRuns = [&](WebKitWebView* view, unsigned expected) {
+        auto* runs = test->runJavaScriptAndWaitUntilFinished("Number(document.documentElement.dataset.extensionScriptRuns || '0')", &error.outPtr(), view);
+        g_assert_no_error(error.get());
+        g_assert_cmpfloat(WebViewTest::javascriptResultToNumber(runs), ==, expected);
+    };
+
+    auto checkPage = [&](WebKitWebView* view, const char* uri, bool shouldInject) {
+        test->loadHtml("<!doctype html><title>Extension fixture</title>", uri, view);
+        test->waitUntilLoadFinished(view);
+        checkScriptRuns(view, shouldInject ? 1 : 0);
+        auto* injected = test->runJavaScriptAndWaitUntilFinished("document.documentElement.dataset.listenerRegistered === 'yes'", &error.outPtr(), view);
+        g_assert_no_error(error.get());
+        g_assert_cmpint(WebViewTest::javascriptResultToBoolean(injected), ==, shouldInject);
+        auto* exposed = test->runJavaScriptAndWaitUntilFinished("typeof globalThis.chrome?.runtime !== 'undefined'", &error.outPtr(), view);
+        g_assert_no_error(error.get());
+        g_assert_false(WebViewTest::javascriptResultToBoolean(exposed));
+        auto* mainWorld = test->runJavaScriptAndWaitUntilFinished("document.documentElement.dataset.mainWorldScriptRan === 'yes'", &error.outPtr(), view);
+        g_assert_no_error(error.get());
+        g_assert_false(WebViewTest::javascriptResultToBoolean(mainWorld));
+        auto* glob = test->runJavaScriptAndWaitUntilFinished("document.documentElement.dataset.globScriptRan === 'yes'", &error.outPtr(), view);
+        g_assert_no_error(error.get());
+        g_assert_false(WebViewTest::javascriptResultToBoolean(glob));
+    };
+
+    g_assert_true(webkit_web_extension_controller_load(controller.get(), context.get(), &error.outPtr()));
+    g_assert_no_error(error.get());
+
+    GRefPtr secondController = adoptGRef(webkit_web_extension_controller_new(secondSession.get()));
+    GUniqueOutPtr<GError> alreadyLoaded;
+    g_assert_false(webkit_web_extension_controller_load(secondController.get(), context.get(), &alreadyLoaded.outPtr()));
+    g_assert_error(alreadyLoaded.get(), WEBKIT_WEB_EXTENSION_CONTEXT_ERROR, WEBKIT_WEB_EXTENSION_CONTEXT_ERROR_ALREADY_LOADED);
+
+    constexpr auto allowedPage = "http://127.0.0.1/fixture/granted/page";
+    constexpr auto securePage = "https://127.0.0.1/fixture/granted/page";
+    checkPage(webView.get(), allowedPage, false);
+
+    const char* grant[] = { "http://127.0.0.1/fixture/granted/*", nullptr };
+    g_assert_true(webkit_web_extension_context_set_granted_hosts(context.get(), grant, &error.outPtr()));
+    g_assert_no_error(error.get());
+    checkPage(webView.get(), securePage, false);
+    checkPage(webView.get(), "http://localhost/fixture/granted/page", false);
+    checkPage(webView.get(), "http://127.0.0.1/fixture/not-granted/page", false);
+    checkPage(webView.get(), allowedPage, true);
+
+    const char* additionalGrant[] = { grant[0], "https://unrelated.example/*", nullptr };
+    g_assert_true(webkit_web_extension_context_set_granted_hosts(context.get(), additionalGrant, &error.outPtr()));
+    g_assert_no_error(error.get());
+    checkScriptRuns(webView.get(), 1);
+
+    const char* narrowedGrant[] = { "http://127.0.0.1/fixture/granted/page*", additionalGrant[1], nullptr };
+    g_assert_true(webkit_web_extension_context_set_granted_hosts(context.get(), narrowedGrant, &error.outPtr()));
+    g_assert_no_error(error.get());
+    checkScriptRuns(webView.get(), 1);
+    checkPage(webView.get(), "http://127.0.0.1/fixture/granted/page-two", true);
+    checkPage(webView.get(), "http://127.0.0.1/fixture/granted/other", false);
+
+    checkPage(test->webView(), allowedPage, false);
+    checkPage(earlyForeignView.get(), allowedPage, false);
+    GRefPtr lateForeignView = makeForeignView();
+    checkPage(lateForeignView.get(), allowedPage, false);
+
+    const char* secureHosts[] = { "https://*/*", "https://127.0.0.1/fixture/granted/*", nullptr };
+    g_assert_true(webkit_web_extension_context_set_granted_hosts(context.get(), secureHosts, &error.outPtr()));
+    g_assert_no_error(error.get());
+    checkPage(webView.get(), securePage, true);
+    checkPage(webView.get(), "https://127.0.0.1/outside-fixture/page", false);
+    checkPage(webView.get(), allowedPage, false);
+
+    const char* revoked[] = { nullptr };
+    g_assert_true(webkit_web_extension_context_set_granted_hosts(context.get(), revoked, &error.outPtr()));
+    g_assert_no_error(error.get());
+    checkPage(webView.get(), securePage, false);
+
+    g_assert_true(webkit_web_extension_context_set_granted_hosts(context.get(), grant, &error.outPtr()));
+    g_assert_no_error(error.get());
+    checkPage(webView.get(), allowedPage, true);
+    g_assert_true(webkit_web_extension_controller_unload(controller.get(), context.get(), &error.outPtr()));
+    g_assert_no_error(error.get());
+    checkPage(webView.get(), allowedPage, false);
+}
+#endif
+
 void beforeAll()
 {
     Test::add("WebKitWebExtensionContext", "content-scripts-parsing", testContentScriptsParsing);
@@ -354,6 +515,9 @@ void beforeAll()
     Test::add("WebKitWebExtensionContext", "uri-overrides-parsing", testURIOverridesParsing);
     Test::add("WebKitWebExtensionContext", "load-background-content-without-controller", testLoadBackgroundContentWithoutController);
     Test::add("WebKitWebExtensionContext", "base-uri", testBaseURI);
+#if PLATFORM(GTK)
+    WebViewTest::add("WebKitWebExtensionContext", "granted-content-world", testGrantedContentWorld);
+#endif
 
     // Some code in WebExtensionContext increases the amount of time allotted to a particular process
     // when running in the Test Runner. Set a consistent Program Name (we can't set an Application ID since the Test Runner doesn't use GApplication)
