@@ -98,6 +98,10 @@
 #include <wtf/text/CString.h>
 #include <wtf/text/MakeString.h>
 
+#if USE(GTK4) && ENABLE(QUICKIE_RELOCATABLE_GTK)
+#include "WebKitInspectorWindow.h"
+#endif
+
 #if ENABLE(FULLSCREEN_API)
 #include "WebFullScreenManagerProxy.h"
 #endif
@@ -332,6 +336,9 @@ struct _WebKitWebViewBasePrivate {
     GtkWidget* inspectorView { nullptr };
     AttachmentSide inspectorAttachmentSide { AttachmentSide::Bottom };
     unsigned inspectorViewSize { 0 };
+#if USE(GTK4) && ENABLE(QUICKIE_RELOCATABLE_GTK)
+    GtkEventControllerMotion* motionController { nullptr };
+#endif
 #if ENABLE(CONTEXT_MENUS)
 #if USE(GTK4)
     GRefPtr<GdkEvent> contextMenuEvent;
@@ -830,6 +837,9 @@ void webkitWebViewBaseAddWebInspector(WebKitWebViewBase* webViewBase, GtkWidget*
 
     webViewBase->priv->inspectorView = inspector;
     gtk_widget_set_parent(inspector, GTK_WIDGET(webViewBase));
+#if USE(GTK4) && ENABLE(QUICKIE_RELOCATABLE_GTK)
+    webkitInspectorViewSetQuickieAppearance(inspector, QuickieInspectorAppearance::Docked);
+#endif
 }
 
 void webkitWebViewBaseRemoveWebInspector(WebKitWebViewBase* webViewBase, GtkWidget* inspector)
@@ -838,6 +848,10 @@ void webkitWebViewBaseRemoveWebInspector(WebKitWebViewBase* webViewBase, GtkWidg
         return;
 
 #if USE(GTK4)
+#if ENABLE(QUICKIE_RELOCATABLE_GTK)
+    if (inspector)
+        webkitInspectorViewSetQuickieAppearance(inspector, QuickieInspectorAppearance::Unstyled);
+#endif
     g_clear_pointer(&webViewBase->priv->inspectorView, gtk_widget_unparent);
 #else
     gtk_container_remove(GTK_CONTAINER(webViewBase), inspector);
@@ -996,6 +1010,37 @@ static void webkitWebViewBaseSetSize(WebKitWebViewBase* webViewBase, const IntSi
         drawingArea->setSize(priv->viewSize);
 }
 
+#if USE(GTK4) && ENABLE(QUICKIE_RELOCATABLE_GTK)
+struct FloatingInspectorAllocation {
+    GtkAllocation inspector;
+    GtkAllocation dialog;
+};
+
+static FloatingInspectorAllocation floatingInspectorAllocation(int width, int height, AttachmentSide side, unsigned requestedSize)
+{
+    constexpr int gutter = 12;
+    auto insetX = std::min(gutter, std::max(width - 1, 0) / 2);
+    auto insetY = std::min(gutter, std::max(height - 1, 0) / 2);
+    auto innerWidth = width - 2 * insetX;
+    auto innerHeight = height - 2 * insetY;
+
+    if (side == AttachmentSide::Bottom) {
+        auto inspectorHeight = static_cast<int>(std::min(requestedSize, static_cast<unsigned>(innerHeight)));
+        auto top = height - insetY - inspectorHeight;
+        return { { insetX, top, innerWidth, inspectorHeight }, { 0, 0, width, std::max(top - insetY, 1) } };
+    }
+
+    auto inspectorWidth = static_cast<int>(std::min(requestedSize, static_cast<unsigned>(innerWidth)));
+    if (side == AttachmentSide::Left) {
+        auto dialogLeft = std::min(insetX + inspectorWidth + insetX, std::max(width - 1, 0));
+        return { { insetX, insetY, inspectorWidth, innerHeight }, { dialogLeft, 0, std::max(width - dialogLeft, 1), height } };
+    }
+
+    auto left = width - insetX - inspectorWidth;
+    return { { left, insetY, inspectorWidth, innerHeight }, { 0, 0, std::max(left - insetX, 1), height } };
+}
+#endif
+
 #if USE(GTK4)
 static void webkitWebViewBaseSizeAllocate(GtkWidget* widget, int width, int height, int baseline)
 #else
@@ -1017,6 +1062,14 @@ static void webkitWebViewBaseSizeAllocate(GtkWidget* widget, GtkAllocation* allo
 
     IntRect viewRect(allocation->x, allocation->y, allocation->width, allocation->height);
     WebKitWebViewBasePrivate* priv = webViewBase->priv;
+#if USE(GTK4) && ENABLE(QUICKIE_RELOCATABLE_GTK)
+    GtkAllocation dialogAllocation = viewRect;
+    if (priv->inspectorView) {
+        auto dock = floatingInspectorAllocation(allocation->width, allocation->height, priv->inspectorAttachmentSide, priv->inspectorViewSize);
+        gtk_widget_size_allocate(priv->inspectorView, &dock.inspector);
+        dialogAllocation = dock.dialog;
+    }
+#else
     if (priv->inspectorView) {
         GtkAllocation childAllocation = viewRect;
 
@@ -1036,16 +1089,17 @@ static void webkitWebViewBaseSizeAllocate(GtkWidget* widget, GtkAllocation* allo
 
         gtk_widget_size_allocate(priv->inspectorView, &childAllocation);
     }
+    GtkAllocation dialogAllocation = { 0, 0, viewRect.width(), viewRect.height() };
+#endif
 
-    // The dialogs are centered in the view rect, which means that it
-    // never overlaps the web inspector. Thus, we need to calculate the allocation here
-    // after calculating the inspector allocation.
+    // Center the dialog in the portion of the page available beside the inspector.
     if (priv->dialog) {
         GtkRequisition minimumSize;
         gtk_widget_get_preferred_size(priv->dialog, &minimumSize, nullptr);
 
-        GtkAllocation childAllocation = { 0, 0, std::max(minimumSize.width, viewRect.width()), std::max(minimumSize.height, viewRect.height()) };
-        gtk_widget_size_allocate(priv->dialog, &childAllocation);
+        dialogAllocation.width = std::max(minimumSize.width, dialogAllocation.width);
+        dialogAllocation.height = std::max(minimumSize.height, dialogAllocation.height);
+        gtk_widget_size_allocate(priv->dialog, &dialogAllocation);
     }
 
 #if USE(GTK4)
@@ -1244,6 +1298,18 @@ static gboolean webkitWebViewBaseKeyReleaseEvent(GtkWidget* widget, GdkEventKey*
 #endif
 
 #if USE(GTK4)
+#if ENABLE(QUICKIE_RELOCATABLE_GTK)
+static bool inspectorHasKeyboardFocus(const WebKitWebViewBasePrivate& priv)
+{
+    if (!priv.inspectorView)
+        return false;
+
+    auto* root = gtk_widget_get_root(priv.inspectorView);
+    auto* focus = root ? gtk_root_get_focus(root) : nullptr;
+    return focus && (focus == priv.inspectorView || gtk_widget_is_ancestor(focus, priv.inspectorView));
+}
+#endif
+
 static void webkitWebViewBaseFocusEnter(WebKitWebViewBase* webViewBase, GtkEventController*)
 {
     webkitWebViewBaseSetFocus(webViewBase, true);
@@ -1259,6 +1325,10 @@ static void webkitWebViewBaseFocusLeave(WebKitWebViewBase* webViewBase, GtkEvent
 static gboolean webkitWebViewBaseKeyPressed(WebKitWebViewBase* webViewBase, unsigned keyval, unsigned, GdkModifierType state, GtkEventController* controller)
 {
     WebKitWebViewBasePrivate* priv = webViewBase->priv;
+#if ENABLE(QUICKIE_RELOCATABLE_GTK)
+    if (inspectorHasKeyboardFocus(*priv))
+        return GDK_EVENT_PROPAGATE;
+#endif
     auto* event = gtk_event_controller_get_current_event(controller);
 
     // Since WebProcess key event handling is not synchronous, handle the event in two passes.
@@ -1308,6 +1378,10 @@ static void webkitWebViewBaseKeyReleased(WebKitWebViewBase* webViewBase, unsigne
 {
     WebKitWebViewBasePrivate* priv = webViewBase->priv;
 
+#if ENABLE(QUICKIE_RELOCATABLE_GTK)
+    if (inspectorHasKeyboardFocus(*priv))
+        return;
+#endif
     priv->keyAutoRepeatHandler.keyRelease();
 
     auto* event = gtk_event_controller_get_current_event(controller);
@@ -1559,6 +1633,10 @@ static gboolean handleScroll(WebKitWebViewBase* webViewBase, double deltaX, doub
     WebKitWebViewBasePrivate* priv = webViewBase->priv;
     if (priv->dialog)
         return GDK_EVENT_PROPAGATE;
+#if ENABLE(QUICKIE_RELOCATABLE_GTK)
+    if (priv->inspectorView && !gtk_event_controller_motion_is_pointer(priv->motionController))
+        return GDK_EVENT_PROPAGATE;
+#endif
 
     // With old versions of libinput, event can be null for synthesized scroll-end events.
     auto* event = gtk_event_controller_get_current_event(eventController);
@@ -1768,11 +1846,17 @@ static gboolean webkitWebViewBaseCrossingNotifyEvent(GtkWidget* widget, GdkEvent
 #endif
 
 #if USE(GTK4)
-static void webkitWebViewBaseEnter(WebKitWebViewBase* webViewBase, double x, double y, GtkEventController*)
+static void webkitWebViewBaseEnter(WebKitWebViewBase* webViewBase, double x, double y, GtkEventController* controller)
 {
     WebKitWebViewBasePrivate* priv = webViewBase->priv;
     if (priv->dialog)
         return;
+#if ENABLE(QUICKIE_RELOCATABLE_GTK)
+    if (priv->inspectorView && !gtk_event_controller_motion_is_pointer(GTK_EVENT_CONTROLLER_MOTION(controller)))
+        return;
+#else
+    UNUSED_PARAM(controller);
+#endif
 
 #if ENABLE(DEVELOPER_MODE)
     // Do not send mouse move events to the WebProcess for crossing events during testing.
@@ -1790,6 +1874,10 @@ static gboolean webkitWebViewBaseMotion(WebKitWebViewBase* webViewBase, double x
     WebKitWebViewBasePrivate* priv = webViewBase->priv;
     if (priv->dialog)
         return GDK_EVENT_PROPAGATE;
+#if ENABLE(QUICKIE_RELOCATABLE_GTK)
+    if (priv->inspectorView && !gtk_event_controller_motion_is_pointer(GTK_EVENT_CONTROLLER_MOTION(controller)))
+        return GDK_EVENT_PROPAGATE;
+#endif
 
     if (priv->pointerLockManager) {
         priv->pointerLockManager->didReceiveMotionEvent(FloatPoint(x, y));
@@ -1829,6 +1917,15 @@ static void webkitWebViewBaseLeave(WebKitWebViewBase* webViewBase, GtkEventContr
     auto pointOutside = pointOutsideViewClosestTo(roundedIntPoint(priv->lastMotionEvent->position), viewSize);
     priv->pageProxy->handleMouseEvent(NativeWebMouseEvent::create(DoublePoint(pointOutside)));
 }
+
+#if ENABLE(QUICKIE_RELOCATABLE_GTK)
+static void webkitWebViewBaseMotionTargetChanged(WebKitWebViewBase* webViewBase, GParamSpec*, GtkEventControllerMotion* controller)
+{
+    // Entering the inspector is a leave for the page, even though GTK still considers its ancestor hovered.
+    if (webViewBase->priv->inspectorView && !gtk_event_controller_motion_is_pointer(controller) && gtk_event_controller_motion_contains_pointer(controller))
+        webkitWebViewBaseLeave(webViewBase, GTK_EVENT_CONTROLLER(controller));
+}
+#endif
 #endif
 
 #if ENABLE(TOUCH_EVENTS)
@@ -2399,6 +2496,10 @@ static void webkitWebViewBaseConstructed(GObject* object)
     g_signal_connect_object(controller, "enter", G_CALLBACK(webkitWebViewBaseEnter), viewWidget, G_CONNECT_SWAPPED);
     g_signal_connect_object(controller, "motion", G_CALLBACK(webkitWebViewBaseMotion), viewWidget, G_CONNECT_SWAPPED);
     g_signal_connect_object(controller, "leave", G_CALLBACK(webkitWebViewBaseLeave), viewWidget, G_CONNECT_SWAPPED);
+#if ENABLE(QUICKIE_RELOCATABLE_GTK)
+    priv->motionController = GTK_EVENT_CONTROLLER_MOTION(controller);
+    g_signal_connect_object(controller, "notify::is-pointer", G_CALLBACK(webkitWebViewBaseMotionTargetChanged), viewWidget, G_CONNECT_SWAPPED);
+#endif
     gtk_widget_add_controller(viewWidget, controller);
 
     controller = gtk_event_controller_focus_new();
