@@ -2788,6 +2788,9 @@ if (APPLE)
         target_link_libraries(webrtc aom dav1d)
     endif ()
 else ()
+    list(APPEND webrtc_INCLUDE_DIRECTORIES PRIVATE
+        Source/third_party/libvpx/source/libvpx
+    )
     target_link_libraries(webrtc ${LIBEVENT_LIBRARY})
     target_link_libraries(webrtc ${LIBOPUS_LIBRARY})
 endif ()
