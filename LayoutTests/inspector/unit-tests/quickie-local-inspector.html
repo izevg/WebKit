@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="../../http/tests/inspector/resources/inspector-test.js"></script>
+<script>
+function test()
+{
+    InspectorTest.expectTrue(WI.Platform.usesQuickieInspectorTheme("linux", false), "A local Linux inspector uses the Quickie theme.");
+    InspectorTest.expectTrue(WI.Platform.usesQuickieInspectorTheme("mac", false), "A local Mac inspector keeps the Quickie theme.");
+    InspectorTest.expectFalse(WI.Platform.usesQuickieInspectorTheme("linux", true), "A remote Linux inspector uses the standard theme.");
+    InspectorTest.expectFalse(WI.Platform.usesQuickieInspectorTheme("mac", true), "A remote Mac inspector uses the standard theme.");
+    InspectorTest.expectFalse(WI.Platform.usesQuickieInspectorTheme("windows", false), "A local Windows inspector uses the standard theme.");
+    InspectorTest.completeTest();
+}
+</script>
+</head>
+<body onload="runTest()">
+<p>Tests where the Quickie Web Inspector theme is enabled.</p>
+</body>
+</html>

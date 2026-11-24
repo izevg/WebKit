@@ -227,7 +227,7 @@ WI.contentLoaded = function()
 
     // Add platform style classes so the UI can be tweaked per-platform.
     document.body.classList.add(WI.Platform.name + "-platform");
-    document.body.classList.toggle("quickie-local-inspector", WI.Platform.name === "mac" && !InspectorFrontendHost.isRemote);
+    document.body.classList.toggle("quickie-local-inspector", WI.Platform.usesQuickieInspectorTheme(WI.Platform.name, InspectorFrontendHost.isRemote));
     if (WI.Platform.version.name)
         document.body.classList.add(WI.Platform.version.name);
 

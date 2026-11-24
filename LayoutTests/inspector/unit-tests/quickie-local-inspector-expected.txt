@@ -1,0 +1,8 @@
+Tests where the Quickie Web Inspector theme is enabled.
+
+PASS: A local Linux inspector uses the Quickie theme.
+PASS: A local Mac inspector keeps the Quickie theme.
+PASS: A remote Linux inspector uses the standard theme.
+PASS: A remote Mac inspector uses the standard theme.
+PASS: A local Windows inspector uses the standard theme.
+

@@ -86,7 +86,7 @@ body.quickie-local-inspector .network .network-detail.resource .navigation-bar >
 
 body.quickie-local-inspector .network .network-detail.resource .navigation-bar > .item.radio.button.text-only.selected {
     color: var(--text-color);
-    box-shadow: inset 0 -2px var(--system-accent-color);
+    box-shadow: inset 0 -2px var(--quickie-accent-color);
 }
 
 body.quickie-local-inspector .network .network-detail.resource .navigation-bar > .item.radio.button.text-only:focus-visible {
@@ -162,7 +162,7 @@ body.quickie-local-inspector .network-detail.resource .resource-headers > sectio
 }
 
 body.quickie-local-inspector .network-detail.resource :is(.request-summary-status.success, .status-success > .value) {
-    color: color-mix(in srgb, -apple-system-green 60%, var(--text-color));
+    color: color-mix(in srgb, var(--quickie-success-color) 60%, var(--text-color));
     font-weight: 600;
 }
 

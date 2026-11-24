@@ -52,7 +52,7 @@ body.quickie-local-inspector .tab.network .network-filter-toolbar {
 
 body.quickie-local-inspector .tab.network .scope-bar {
     --scope-bar-text-color-override: var(--text-color);
-    --scope-bar-background-color-override: color-mix(in srgb, var(--system-accent-color) 18%, transparent);
+    --scope-bar-background-color-override: var(--quickie-selection-fill);
     --scope-bar-border-color-override: transparent;
 }
 
@@ -68,7 +68,7 @@ body.quickie-local-inspector .network-table > .table,
 body.quickie-local-inspector .content-view.dom-tree .tree-outline.dom,
 body.quickie-local-inspector .content-view.dom-storage > .data-grid,
 body.quickie-local-inspector .heap-allocations .data-grid {
-    --selected-background-color: color-mix(in srgb, var(--system-accent-color) 18%, var(--background-color-content));
+    --selected-background-color: color-mix(in srgb, var(--quickie-accent-color) 18%, var(--background-color-content));
     --selected-background-color-unfocused: var(--background-color-intermediate);
     --selected-foreground-color: var(--text-color);
     --selected-secondary-text-color: var(--text-color-secondary);
@@ -185,7 +185,7 @@ body.quickie-local-inspector .content-view.dom-storage > .storage-value-preview 
     body.quickie-local-inspector .content-view.dom-tree .tree-outline.dom li.selected .selection-area,
     body.quickie-local-inspector .content-view.dom-storage .data-grid tr.selected,
     body.quickie-local-inspector .heap-allocations .data-grid tr.selected {
-        outline: 2px solid var(--system-accent-color);
+        outline: 2px solid var(--quickie-accent-color);
         outline-offset: -2px;
     }
 }

@@ -27,5 +27,10 @@ WI.Platform = {
     name: InspectorFrontendHost.platform,
     version: {
         name: InspectorFrontendHost.platformVersionName,
-    }
+    },
+
+    usesQuickieInspectorTheme(platform, isRemote)
+    {
+        return !isRemote && (platform === "mac" || platform === "linux");
+    },
 };
