@@ -38,7 +38,8 @@ webkit_add_compile_definitions(DATADIR="${CMAKE_INSTALL_FULL_DATADIR}")
 webkit_add_compile_definitions(LIBDIR="${LIB_INSTALL_DIR}")
 webkit_add_compile_definitions(PKGLIBDIR="${LIB_INSTALL_DIR}/webkit${WEBKITGTK_API_INFIX}gtk-${WEBKITGTK_API_VERSION}")
 
-if (NOT DEVELOPER_MODE AND NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
+# Quickie's opt-in native API tests link private helpers in a release configuration.
+if (NOT DEVELOPER_MODE AND NOT (ENABLE_QUICKIE_RELOCATABLE_GTK AND ENABLE_API_TESTS) AND NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
     target_link_options(WebKit PRIVATE "LINKER:--version-script,${CMAKE_CURRENT_SOURCE_DIR}/webkitglib-symbols.map")
     set_property(TARGET WebKit APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/webkitglib-symbols.map")
 endif ()
