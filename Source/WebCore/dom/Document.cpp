@@ -8621,9 +8621,10 @@ void Document::finishedParsing()
     }
 
     // FIXME: Schedule a task to fire DOMContentLoaded event instead. See webkit.org/b/82931
+    // A detached document shares its caller's microtask queue, so only checkpoint framed parsing.
     RefPtr documentLoader = loader();
     bool isInMiddleOfInitializingIframe = documentLoader && documentLoader->isInFinishedLoadingOfEmptyDocument();
-    if (!isInMiddleOfInitializingIframe)
+    if (frame() && !isInMiddleOfInitializingIframe)
         eventLoop().performMicrotaskCheckpoint(vm());
 
     dispatchEvent(Event::create(eventNames().DOMContentLoadedEvent, Event::CanBubble::Yes, Event::IsCancelable::No));

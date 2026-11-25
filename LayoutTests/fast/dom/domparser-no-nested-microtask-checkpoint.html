@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Detached document parsing does not perform a nested microtask checkpoint</title>
+<script src="../../resources/testharness.js"></script>
+<script src="../../resources/testharnessreport.js"></script>
+<script>
+async_test((t) => {
+    t.step_timeout(() => {
+        const order = [];
+        Promise.resolve().then(t.step_func(() => {
+            order.push('microtask');
+        }));
+
+        order.push('before');
+        const parsed = new DOMParser().parseFromString(
+            '<!doctype html><html><head><title>hello</title></head><body><p>hello</p></body></html>',
+            'text/html'
+        );
+        order.push('after');
+
+        assert_array_equals(order, ['before', 'after']);
+        assert_equals(parsed.documentElement.localName, 'html');
+        assert_equals(parsed.title, 'hello');
+        assert_equals(parsed.body.querySelector('p').textContent, 'hello');
+
+        t.step_timeout(() => {
+            assert_array_equals(order, ['before', 'after', 'microtask']);
+            t.done();
+        }, 0);
+    }, 0);
+}, 'DOMParser.parseFromString for a complete HTML document preserves microtask order');
+
+async_test((t) => {
+    t.step_timeout(() => {
+        const order = [];
+        Promise.resolve().then(t.step_func(() => {
+            order.push('microtask');
+        }));
+
+        order.push('before');
+        const parsed = new DOMParser().parseFromString('<root><item>value</item></root>', 'application/xml');
+        order.push('after');
+
+        assert_array_equals(order, ['before', 'after']);
+        assert_equals(parsed.documentElement.localName, 'root');
+        assert_equals(parsed.documentElement.firstElementChild.localName, 'item');
+        assert_equals(parsed.documentElement.firstElementChild.textContent, 'value');
+
+        t.step_timeout(() => {
+            assert_array_equals(order, ['before', 'after', 'microtask']);
+            t.done();
+        }, 0);
+    }, 0);
+}, 'DOMParser.parseFromString for XML preserves microtask order');
+
+async_test((t) => {
+    t.step_timeout(() => {
+        assert_equals(typeof Document.parseHTMLUnsafe, 'function');
+        const order = [];
+        Promise.resolve().then(t.step_func(() => {
+            order.push('microtask');
+        }));
+
+        order.push('before');
+        const parsed = Document.parseHTMLUnsafe(
+            '<!doctype html><html><head><title>unsafe</title></head><body><p>unsafe</p></body></html>'
+        );
+        order.push('after');
+
+        assert_array_equals(order, ['before', 'after']);
+        assert_equals(parsed.documentElement.localName, 'html');
+        assert_equals(parsed.title, 'unsafe');
+        assert_equals(parsed.body.querySelector('p').textContent, 'unsafe');
+
+        t.step_timeout(() => {
+            assert_array_equals(order, ['before', 'after', 'microtask']);
+            t.done();
+        }, 0);
+    }, 0);
+}, 'Document.parseHTMLUnsafe for a complete HTML document preserves microtask order');
+</script>

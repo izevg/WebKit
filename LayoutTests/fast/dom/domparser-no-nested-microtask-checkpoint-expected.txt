@@ -1,0 +1,5 @@
+
+PASS DOMParser.parseFromString for a complete HTML document preserves microtask order
+PASS DOMParser.parseFromString for XML preserves microtask order
+PASS Document.parseHTMLUnsafe for a complete HTML document preserves microtask order
+
