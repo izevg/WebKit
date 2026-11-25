@@ -117,7 +117,7 @@ WebKitWebExtensionMatchPattern* webkitWebExtensionMatchPatternCreate(const RefPt
 
 WebKitWebExtensionMatchPattern* webkitWebExtensionMatchPatternCreate(Ref<WebExtensionMatchPattern>& matchPattern)
 {
-    RefPtr<WebExtensionMatchPattern> apiMatchPattern = adoptRef(matchPattern.get());
+    RefPtr<WebExtensionMatchPattern> apiMatchPattern = matchPattern.ptr();
 
     return webkitWebExtensionMatchPatternCreate(apiMatchPattern);
 }
