@@ -36,9 +36,7 @@
 #include <wtf/text/MakeString.h>
 
 #if PLATFORM(GTK) && USE(GTK4) && ENABLE(REMOTE_INSPECTOR)
-#include <wtf/JSONValues.h>
 #include <wtf/MainThread.h>
-#include <wtf/URL.h>
 #endif
 
 #if ENABLE(2022_GLIB_API)
@@ -126,7 +124,9 @@ private:
         WebKitWebView* webView = nullptr;
         GQuark detail = options & API::AutomationSessionBrowsingContextOptionsPreferNewTab ? g_quark_from_string("tab") : g_quark_from_string("window");
         g_signal_emit(m_session, signals[CREATE_WEB_VIEW], detail, &webView);
-        if (!webView || !webkit_web_view_is_controlled_by_automation(webView))
+        auto* webContext = m_session->priv->webContext.get();
+        if (!webView || !webkit_web_view_is_controlled_by_automation(webView)
+            || (m_session->priv->isLocal && (!webContext || webkit_web_view_get_context(webView) != webContext)))
             completionHandler(nullptr);
         else
             completionHandler(&webkitWebViewGetPage(webView));
@@ -394,11 +394,14 @@ static void webkit_automation_session_class_init(WebKitAutomationSessionClass* s
  * @message: a JSON automation protocol request
  *
  * Dispatches a request to an in-process automation session on the main thread.
- * The supported methods are `Automation.getBrowsingContexts` and
- * `Automation.navigateBrowsingContext` for HTTP and HTTPS URLs without
- * credentials. The caller applies its navigation policy through the web
- * view's policy decisions.
- * Replies arrive through #WebKitAutomationSession::message-received.
+ * Requests are validated against the restricted classic Automation allowlist
+ * (browsing context lifecycle, HTTP/HTTPS navigation without credentials,
+ * history/reload, element geometry and accessibility label/role, trusted input
+ * and cancellation, screenshots, and read-only Inspector observation through
+ * `Automation.sendInspectorMessage` with a nested `Target` allowlist).
+ * The caller applies its navigation policy through the web view's policy
+ * decisions. Replies and events arrive through
+ * #WebKitAutomationSession::message-received.
  *
  * Returns: %TRUE if the request was dispatched
  *
@@ -411,24 +414,10 @@ gboolean webkit_automation_session_send_message(WebKitAutomationSession* session
 
 #if ENABLE(REMOTE_INSPECTOR)
     assertIsMainRunLoop();
-    auto protocolMessage = String::fromUTF8(message);
-    auto value = JSON::Value::parseJSON(protocolMessage);
-    auto request = value ? value->asObject() : nullptr;
-    if (!request || !request->getInteger("id"_s))
+    if (!session->priv->isLocal)
         return FALSE;
 
-    auto method = request->getString("method"_s);
-    if (method == "Automation.navigateBrowsingContext"_s) {
-        auto parameters = request->getObject("params"_s);
-        if (!parameters || parameters->getString("handle"_s).isEmpty())
-            return FALSE;
-        URL url { parameters->getString("url"_s) };
-        if (!url.isValid() || !url.protocolIsInHTTPFamily() || url.hasCredentials())
-            return FALSE;
-    } else if (method != "Automation.getBrowsingContexts"_s)
-        return FALSE;
-
-    return session->priv->session->dispatchMessageFromLocalClient(WTF::move(protocolMessage));
+    return session->priv->session->dispatchMessageFromLocalClient(String::fromUTF8(message));
 #else
     return FALSE;
 #endif
@@ -440,6 +429,8 @@ WebKitAutomationSession* webkitAutomationSessionCreateLocal(WebKitWebContext* co
     GRefPtr<WebKitAutomationSession> session = adoptGRef(WEBKIT_AUTOMATION_SESSION(g_object_new(WEBKIT_TYPE_AUTOMATION_SESSION, "id", sessionID, nullptr)));
     session->priv->webContext.reset(context);
     session->priv->isLocal = true;
+    session->priv->session->setLocalClientPolicy(WebAutomationSession::LocalClientPolicy::Restricted);
+    session->priv->session->setInspectorPassthroughEnabled(true);
     if (!session->priv->session->connectLocalClient([weakSession = GWeakPtr<WebKitAutomationSession> { session.get() }](const String& message) {
         if (GRefPtr<WebKitAutomationSession> session = weakSession.get())
             gSignalEmit(session.get(), signals[MESSAGE_RECEIVED], 0, message.utf8());

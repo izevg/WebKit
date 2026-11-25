@@ -73,6 +73,7 @@
 #include <wtf/CallbackAggregator.h>
 #include <wtf/FileSystem.h>
 #include <wtf/HashMap.h>
+#include <wtf/JSONValues.h>
 #include <wtf/MainThread.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/RefCounted.h>
@@ -369,11 +370,125 @@ void WebAutomationSession::disconnectLocalClient()
     disconnect(*m_localClientChannel);
 }
 
+static bool isAllowedRestrictedInspectorObservationMethod(const String& method)
+{
+    return method == "Console.enable"_s
+        || method == "Console.disable"_s
+        || method == "Runtime.enable"_s
+        || method == "Runtime.disable"_s
+        || method == "Network.enable"_s
+        || method == "Network.disable"_s
+        || method == "Page.enable"_s
+        || method == "Page.disable"_s
+        || method == "Page.getResourceTree"_s
+        || method == "DOM.getDocument"_s
+        || method == "DOM.requestChildNodes"_s
+        || method == "DOM.querySelector"_s
+        || method == "DOM.querySelectorAll"_s
+        || method == "DOM.getAttributes"_s
+        || method == "DOM.getOuterHTML"_s
+        || method == "DOM.getAccessibilityPropertiesForNode"_s
+        || method == "DOM.getSupportedEventNames"_s
+        || method == "DOM.requestFrameOwner"_s
+        || method == "DOM.requestAssignedSlot"_s
+        || method == "DOM.requestAssignedNodes"_s;
+}
+
+static bool isAllowedRestrictedInspectorMessage(const String& message, bool allowTargetCommands)
+{
+    auto value = JSON::Value::parseJSON(message);
+    auto request = value ? value->asObject() : nullptr;
+    if (!request || !request->getInteger("id"_s))
+        return false;
+
+    auto method = request->getString("method"_s);
+    if (allowTargetCommands) {
+        if (method == "Target.setPauseOnStart"_s) {
+            auto parameters = request->getObject("params"_s);
+            return parameters && parameters->getBoolean("pauseOnStart"_s);
+        }
+        if (method == "Target.resume"_s) {
+            auto parameters = request->getObject("params"_s);
+            return parameters && !parameters->getString("targetId"_s).isEmpty();
+        }
+        if (method == "Target.sendMessageToTarget"_s) {
+            auto parameters = request->getObject("params"_s);
+            if (!parameters || parameters->getString("targetId"_s).isEmpty())
+                return false;
+            auto nestedMessage = parameters->getString("message"_s);
+            return !nestedMessage.isEmpty() && isAllowedRestrictedInspectorMessage(nestedMessage, false);
+        }
+    }
+
+    return isAllowedRestrictedInspectorObservationMethod(method);
+}
+
+bool WebAutomationSession::isAllowedRestrictedLocalMessage(const String& message)
+{
+    auto value = JSON::Value::parseJSON(message);
+    auto request = value ? value->asObject() : nullptr;
+    if (!request || !request->getInteger("id"_s))
+        return false;
+
+    auto method = request->getString("method"_s);
+    if (method == "Automation.getBrowsingContexts"_s || method == "Automation.createBrowsingContext"_s)
+        return true;
+
+    auto parameters = request->getObject("params"_s);
+    if (!parameters)
+        return false;
+
+    auto hasNonEmptyParam = [&parameters](ASCIILiteral key) {
+        return !parameters->getString(key).isEmpty();
+    };
+
+    if (method == "Automation.navigateBrowsingContext"_s) {
+        if (!hasNonEmptyParam("handle"_s))
+            return false;
+        URL url { parameters->getString("url"_s) };
+        return url.isValid() && url.protocolIsInHTTPFamily() && !url.hasCredentials();
+    }
+
+    if (method == "Automation.getBrowsingContext"_s
+        || method == "Automation.closeBrowsingContext"_s
+        || method == "Automation.goBackInBrowsingContext"_s
+        || method == "Automation.goForwardInBrowsingContext"_s
+        || method == "Automation.reloadBrowsingContext"_s
+        || method == "Automation.performMouseInteraction"_s
+        || method == "Automation.performKeyboardInteractions"_s
+        || method == "Automation.performInteractionSequence"_s
+        || method == "Automation.cancelInteractionSequence"_s
+        || method == "Automation.takeScreenshot"_s)
+        return hasNonEmptyParam("handle"_s);
+
+    if (method == "Automation.resolveBrowsingContext"_s
+        || method == "Automation.switchToBrowsingContext"_s
+        || method == "Automation.waitForNavigationToComplete"_s)
+        return hasNonEmptyParam("browsingContextHandle"_s);
+
+    if (method == "Automation.computeElementLayout"_s
+        || method == "Automation.getComputedRole"_s
+        || method == "Automation.getComputedLabel"_s)
+        return hasNonEmptyParam("browsingContextHandle"_s) && hasNonEmptyParam("nodeHandle"_s);
+
+    if (method == "Automation.sendInspectorMessage"_s) {
+        if (!hasNonEmptyParam("browsingContextHandle"_s))
+            return false;
+        auto innerMessage = parameters->getString("message"_s);
+        return !innerMessage.isEmpty() && isAllowedRestrictedInspectorMessage(innerMessage, true);
+    }
+
+    return false;
+}
+
 bool WebAutomationSession::dispatchMessageFromLocalClient(String&& message)
 {
     assertIsMainRunLoop();
 
     if (!m_localClientChannel || !m_processPool)
+        return false;
+
+    if (m_localClientPolicy == LocalClientPolicy::Restricted && !isAllowedRestrictedLocalMessage(message))
         return false;
 
     dispatchMessageFromRemote(WTF::move(message));

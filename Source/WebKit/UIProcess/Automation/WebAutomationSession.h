@@ -245,11 +245,15 @@ public:
     // Messages from the session reach the local client asynchronously and in order.
     // Disconnecting drops queued messages. To keep the session out of RemoteInspector,
     // connect the local client before WebProcessPool::setAutomationSession().
+    enum class LocalClientPolicy : bool { Unrestricted, Restricted };
     bool connectLocalClient(Function<void(const String&)>&& messageHandler);
     void disconnectLocalClient();
-    // Returns false if the local client or process pool is unavailable.
+    // Returns false if the local client or process pool is unavailable, or if the
+    // message is rejected by the local client policy.
     bool dispatchMessageFromLocalClient(String&& message);
     bool hasLocalClient() const { return !!m_localClientChannel; }
+    void setLocalClientPolicy(LocalClientPolicy policy) { m_localClientPolicy = policy; }
+    static bool isAllowedRestrictedLocalMessage(const String&);
     void setInspectorPassthroughEnabled(bool enabled) { m_inspectorPassthroughEnabled = enabled; }
 #endif
 
@@ -661,6 +665,7 @@ private:
     const Ref<Debuggable> m_debuggable;
     std::unique_ptr<LocalAutomationClientChannel> m_localClientChannel;
     bool m_isLocalSession { false };
+    LocalClientPolicy m_localClientPolicy { LocalClientPolicy::Unrestricted };
     bool m_inspectorPassthroughEnabled { false };
 #endif
 
