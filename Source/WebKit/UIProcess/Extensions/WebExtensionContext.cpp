@@ -1837,7 +1837,11 @@ bool WebExtensionContext::purgeMatchedRulesFromBefore(const WallTime& startTime)
 
 void WebExtensionContext::addDeclarativeNetRequestRules(WebUserContentControllerProxy& controllerProxy)
 {
-    API::ContentRuleListStore::defaultStoreSingleton().lookupContentRuleListFile(declarativeNetRequestContentRuleListFilePath(), uniqueIdentifier().isolatedCopy(), [this, protectedThis = Ref { *this }, controllerProxy = Ref { controllerProxy }](RefPtr<API::ContentRuleList> ruleList, std::error_code) {
+    auto filePath = declarativeNetRequestContentRuleListFilePath();
+    if (filePath.isEmpty())
+        return;
+
+    API::ContentRuleListStore::defaultStoreSingleton().lookupContentRuleListFile(WTF::move(filePath), uniqueIdentifier().isolatedCopy(), [this, protectedThis = Ref { *this }, controllerProxy = Ref { controllerProxy }](RefPtr<API::ContentRuleList> ruleList, std::error_code) {
         if (!ruleList)
             return;
 
@@ -1851,7 +1855,11 @@ void WebExtensionContext::addDeclarativeNetRequestRules(WebUserContentController
 
 void WebExtensionContext::addDeclarativeNetRequestRulesToPrivateUserContentControllers()
 {
-    API::ContentRuleListStore::defaultStoreSingleton().lookupContentRuleListFile(declarativeNetRequestContentRuleListFilePath(), uniqueIdentifier().isolatedCopy(), [this, protectedThis = Ref { *this }](RefPtr<API::ContentRuleList> ruleList, std::error_code) {
+    auto filePath = declarativeNetRequestContentRuleListFilePath();
+    if (filePath.isEmpty())
+        return;
+
+    API::ContentRuleListStore::defaultStoreSingleton().lookupContentRuleListFile(WTF::move(filePath), uniqueIdentifier().isolatedCopy(), [this, protectedThis = Ref { *this }](RefPtr<API::ContentRuleList> ruleList, std::error_code) {
         if (!ruleList)
             return;
 
