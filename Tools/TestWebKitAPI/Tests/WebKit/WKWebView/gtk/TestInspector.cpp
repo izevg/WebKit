@@ -21,6 +21,7 @@
 
 #include "WebViewTest.h"
 #include <wtf/Vector.h>
+#include <wtf/glib/GLibExtras.h>
 #include <wtf/glib/GRefPtr.h>
 #include <wtf/glib/GUniquePtr.h>
 #include <wtf/text/CString.h>
@@ -412,7 +413,7 @@ static void testInspectorLocalDiagnosticChannel(InspectorTest* test, gconstpoint
 
     struct DiagnosticState {
         GMainLoop* mainLoop;
-        CString targetID;
+        UTF8CString targetID;
         bool receivedConsoleReply { false };
         bool receivedAfterDisconnect { false };
         bool disconnected { false };
@@ -428,7 +429,7 @@ static void testInspectorLocalDiagnosticChannel(InspectorTest* test, gconstpoint
             if (const char* key = g_strstr_len(message, -1, "\"targetId\":\"")) {
                 const char* valueStart = key + 12;
                 if (const char* valueEnd = g_strstr_len(valueStart, -1, "\"")) {
-                    state->targetID = CString(valueStart, valueEnd - valueStart);
+                    state->targetID = UTF8CString::fromUTF8(unsafeMakeSpan(valueStart, static_cast<size_t>(valueEnd - valueStart)));
                     g_main_loop_quit(state->mainLoop);
                 }
             }
@@ -447,21 +448,21 @@ static void testInspectorLocalDiagnosticChannel(InspectorTest* test, gconstpoint
     g_assert_false(webkit_web_inspector_send_diagnostic_message(test->m_inspector, "{not json"));
     g_assert_false(webkit_web_inspector_send_diagnostic_message(test->m_inspector, "{\"id\":99,\"method\":\"Runtime.evaluate\",\"params\":{\"expression\":\"1+1\"}}"));
 
-    GUniquePtr<char> consoleEnable(g_strdup_printf(
+    GUniquePtr<char> consoleEnable(SAFE_G_STRDUP_PRINTF(
         "{\"id\":1,\"method\":\"Target.sendMessageToTarget\",\"params\":{\"targetId\":\"%s\",\"message\":\"{\\\"id\\\":10,\\\"method\\\":\\\"Console.enable\\\"}\"}}",
-        state.targetID.data()));
-    GUniquePtr<char> runtimeEnable(g_strdup_printf(
+        state.targetID));
+    GUniquePtr<char> runtimeEnable(SAFE_G_STRDUP_PRINTF(
         "{\"id\":2,\"method\":\"Target.sendMessageToTarget\",\"params\":{\"targetId\":\"%s\",\"message\":\"{\\\"id\\\":11,\\\"method\\\":\\\"Runtime.enable\\\"}\"}}",
-        state.targetID.data()));
-    GUniquePtr<char> networkEnable(g_strdup_printf(
+        state.targetID));
+    GUniquePtr<char> networkEnable(SAFE_G_STRDUP_PRINTF(
         "{\"id\":3,\"method\":\"Target.sendMessageToTarget\",\"params\":{\"targetId\":\"%s\",\"message\":\"{\\\"id\\\":12,\\\"method\\\":\\\"Network.enable\\\"}\"}}",
-        state.targetID.data()));
-    GUniquePtr<char> pageEnable(g_strdup_printf(
+        state.targetID));
+    GUniquePtr<char> pageEnable(SAFE_G_STRDUP_PRINTF(
         "{\"id\":4,\"method\":\"Target.sendMessageToTarget\",\"params\":{\"targetId\":\"%s\",\"message\":\"{\\\"id\\\":13,\\\"method\\\":\\\"Page.enable\\\"}\"}}",
-        state.targetID.data()));
-    GUniquePtr<char> disallowedEval(g_strdup_printf(
+        state.targetID));
+    GUniquePtr<char> disallowedEval(SAFE_G_STRDUP_PRINTF(
         "{\"id\":5,\"method\":\"Target.sendMessageToTarget\",\"params\":{\"targetId\":\"%s\",\"message\":\"{\\\"id\\\":14,\\\"method\\\":\\\"Runtime.evaluate\\\"}\"}}",
-        state.targetID.data()));
+        state.targetID));
 
     g_assert_true(webkit_web_inspector_send_diagnostic_message(test->m_inspector, consoleEnable.get()));
     g_assert_true(webkit_web_inspector_send_diagnostic_message(test->m_inspector, runtimeEnable.get()));

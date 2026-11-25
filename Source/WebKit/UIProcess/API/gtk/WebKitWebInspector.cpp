@@ -27,6 +27,7 @@
 #include "WebPageProxy.h"
 #include <glib/gi18n-lib.h>
 #include <wtf/TZoneMallocInlines.h>
+#include <wtf/glib/GLibExtras.h>
 #include <wtf/glib/GRefPtr.h>
 #include <wtf/glib/GWeakPtr.h>
 #include <wtf/glib/WTFGType.h>
@@ -592,7 +593,7 @@ gboolean webkit_web_inspector_connect_local_diagnostic_client(WebKitWebInspector
 
     return inspectedPage->inspectorController().connectLocalDiagnosticClient([weakInspector = GWeakPtr<WebKitWebInspector> { inspector }](const String& message) {
         if (GRefPtr<WebKitWebInspector> inspector = weakInspector.get())
-            g_signal_emit(inspector.get(), signals[DIAGNOSTIC_MESSAGE_RECEIVED], 0, message.utf8().data());
+            gSignalEmit(inspector.get(), signals[DIAGNOSTIC_MESSAGE_RECEIVED], 0, message.utf8());
     });
 }
 
