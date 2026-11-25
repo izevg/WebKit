@@ -80,6 +80,16 @@ webkit_web_inspector_get_attached_height (WebKitWebInspector *inspector);
 WEBKIT_API gboolean
 webkit_web_inspector_get_can_attach      (WebKitWebInspector* inspector);
 
+WEBKIT_API gboolean
+webkit_web_inspector_connect_local_diagnostic_client    (WebKitWebInspector *inspector);
+
+WEBKIT_API gboolean
+webkit_web_inspector_send_diagnostic_message            (WebKitWebInspector *inspector,
+                                                         const char         *message);
+
+WEBKIT_API void
+webkit_web_inspector_disconnect_local_diagnostic_client (WebKitWebInspector *inspector);
+
 G_END_DECLS
 
 #endif

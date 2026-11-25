@@ -22,6 +22,8 @@
 #include "WebViewTest.h"
 #include <wtf/Vector.h>
 #include <wtf/glib/GRefPtr.h>
+#include <wtf/glib/GUniquePtr.h>
+#include <wtf/text/CString.h>
 
 class InspectorTest: public WebViewTest {
 public:
@@ -402,11 +404,99 @@ static void testInspectorCustomContainerDestroyed(CustomInspectorTest* test, gco
     test->m_events.clear();
 }
 
+static void testInspectorLocalDiagnosticChannel(InspectorTest* test, gconstpointer)
+{
+    test->showInWindow();
+    test->loadHtml("<html><body><p>WebKitGTK Diagnostic Inspector test</p></body></html>", nullptr);
+    test->waitUntilLoadFinished();
+
+    struct DiagnosticState {
+        GMainLoop* mainLoop;
+        CString targetID;
+        bool receivedConsoleReply { false };
+        bool receivedAfterDisconnect { false };
+        bool disconnected { false };
+    } state { test->m_mainLoop, { }, false, false, false };
+
+    unsigned long signalID = g_signal_connect(test->m_inspector, "diagnostic-message-received", G_CALLBACK(+[](WebKitWebInspector*, const char* message, DiagnosticState* state) {
+        if (state->disconnected) {
+            state->receivedAfterDisconnect = true;
+            return;
+        }
+        g_assert_nonnull(message);
+        if (state->targetID.isNull() && g_strstr_len(message, -1, "\"Target.targetCreated\"")) {
+            if (const char* key = g_strstr_len(message, -1, "\"targetId\":\"")) {
+                const char* valueStart = key + 12;
+                if (const char* valueEnd = g_strstr_len(valueStart, -1, "\"")) {
+                    state->targetID = CString(valueStart, valueEnd - valueStart);
+                    g_main_loop_quit(state->mainLoop);
+                }
+            }
+        } else if (g_strstr_len(message, -1, "\"id\":1")) {
+            state->receivedConsoleReply = true;
+            g_main_loop_quit(state->mainLoop);
+        }
+    }), &state);
+
+    g_assert_true(webkit_web_inspector_connect_local_diagnostic_client(test->m_inspector));
+    g_assert_false(webkit_web_inspector_connect_local_diagnostic_client(test->m_inspector));
+
+    g_main_loop_run(test->m_mainLoop);
+    g_assert_false(state.targetID.isNull());
+
+    g_assert_false(webkit_web_inspector_send_diagnostic_message(test->m_inspector, "{not json"));
+    g_assert_false(webkit_web_inspector_send_diagnostic_message(test->m_inspector, "{\"id\":99,\"method\":\"Runtime.evaluate\",\"params\":{\"expression\":\"1+1\"}}"));
+
+    GUniquePtr<char> consoleEnable(g_strdup_printf(
+        "{\"id\":1,\"method\":\"Target.sendMessageToTarget\",\"params\":{\"targetId\":\"%s\",\"message\":\"{\\\"id\\\":10,\\\"method\\\":\\\"Console.enable\\\"}\"}}",
+        state.targetID.data()));
+    GUniquePtr<char> runtimeEnable(g_strdup_printf(
+        "{\"id\":2,\"method\":\"Target.sendMessageToTarget\",\"params\":{\"targetId\":\"%s\",\"message\":\"{\\\"id\\\":11,\\\"method\\\":\\\"Runtime.enable\\\"}\"}}",
+        state.targetID.data()));
+    GUniquePtr<char> networkEnable(g_strdup_printf(
+        "{\"id\":3,\"method\":\"Target.sendMessageToTarget\",\"params\":{\"targetId\":\"%s\",\"message\":\"{\\\"id\\\":12,\\\"method\\\":\\\"Network.enable\\\"}\"}}",
+        state.targetID.data()));
+    GUniquePtr<char> pageEnable(g_strdup_printf(
+        "{\"id\":4,\"method\":\"Target.sendMessageToTarget\",\"params\":{\"targetId\":\"%s\",\"message\":\"{\\\"id\\\":13,\\\"method\\\":\\\"Page.enable\\\"}\"}}",
+        state.targetID.data()));
+    GUniquePtr<char> disallowedEval(g_strdup_printf(
+        "{\"id\":5,\"method\":\"Target.sendMessageToTarget\",\"params\":{\"targetId\":\"%s\",\"message\":\"{\\\"id\\\":14,\\\"method\\\":\\\"Runtime.evaluate\\\"}\"}}",
+        state.targetID.data()));
+
+    g_assert_true(webkit_web_inspector_send_diagnostic_message(test->m_inspector, consoleEnable.get()));
+    g_assert_true(webkit_web_inspector_send_diagnostic_message(test->m_inspector, runtimeEnable.get()));
+    g_assert_true(webkit_web_inspector_send_diagnostic_message(test->m_inspector, networkEnable.get()));
+    g_assert_true(webkit_web_inspector_send_diagnostic_message(test->m_inspector, pageEnable.get()));
+    g_assert_false(webkit_web_inspector_send_diagnostic_message(test->m_inspector, disallowedEval.get()));
+
+    g_main_loop_run(test->m_mainLoop);
+    g_assert_true(state.receivedConsoleReply);
+
+    state.disconnected = true;
+    webkit_web_inspector_disconnect_local_diagnostic_client(test->m_inspector);
+    g_assert_false(webkit_web_inspector_send_diagnostic_message(test->m_inspector, consoleEnable.get()));
+    g_assert_false(state.receivedAfterDisconnect);
+
+    // Visual Inspector takes priority over local diagnostic client.
+    state.disconnected = false;
+    g_assert_true(webkit_web_inspector_connect_local_diagnostic_client(test->m_inspector));
+    test->show();
+    g_assert_false(webkit_web_inspector_send_diagnostic_message(test->m_inspector, consoleEnable.get()));
+    g_assert_false(webkit_web_inspector_connect_local_diagnostic_client(test->m_inspector));
+    test->close();
+    test->m_events.clear();
+
+    g_assert_true(webkit_web_inspector_connect_local_diagnostic_client(test->m_inspector));
+    webkit_web_inspector_disconnect_local_diagnostic_client(test->m_inspector);
+    g_signal_handler_disconnect(test->m_inspector, signalID);
+}
+
 void beforeAll()
 {
     InspectorTest::add("WebKitWebInspector", "default", testInspectorDefault);
     CustomInspectorTest::add("WebKitWebInspector", "manual-attach-detach", testInspectorManualAttachDetach);
     CustomInspectorTest::add("WebKitWebInspector", "custom-container-destroyed", testInspectorCustomContainerDestroyed);
+    InspectorTest::add("WebKitWebInspector", "local-diagnostic-channel", testInspectorLocalDiagnosticChannel);
 }
 
 void afterAll()

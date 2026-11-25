@@ -372,6 +372,7 @@ Tests/WebKit/WKWebView/WKInspectorDelegate.mm @nonARC
 Tests/WebKit/WKWebView/WKInspectorExtension.mm @nonARC
 Tests/WebKit/WKWebView/WKInspectorExtensionDelegate.mm @nonARC
 Tests/WebKit/WKWebView/WKInspectorExtensionHost.mm @nonARC
+Tests/WebKit/WKWebView/WKInspectorLocalDiagnosticChannel.mm @nonARC
 Tests/WebKit/WKWebView/WKNSDictionaryEmptyDictionaryCrash.mm @nonARC
 Tests/WebKit/WKWebView/WKNSNumber.mm @nonARC
 Tests/WebKit/WKWebView/WKNavigationResponse.mm @nonARC
