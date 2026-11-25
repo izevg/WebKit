@@ -187,11 +187,6 @@ void WebExtensionControllerProxy::addBindingsToWebPageFrameIfNecessary(WebFrame&
     }
 }
 
-void WebExtensionControllerProxy::addFrameWithTestListeners(WebFrame& frame)
-{
-    m_framesWithTestListeners.add(frame);
-}
-
 void WebExtensionControllerProxy::addTestListenersToContext(WebExtensionContextProxy& context)
 {
     if (!m_testingMode)

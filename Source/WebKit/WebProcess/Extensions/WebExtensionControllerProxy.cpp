@@ -127,6 +127,11 @@ void WebExtensionControllerProxy::unload(WebExtensionContextIdentifier contextId
     });
 }
 
+void WebExtensionControllerProxy::addFrameWithTestListeners(WebFrame& frame)
+{
+    m_framesWithTestListeners.add(frame);
+}
+
 RefPtr<WebExtensionContextProxy> WebExtensionControllerProxy::extensionContext(const String& uniqueIdentifier) const
 {
     for (auto& extensionContext : m_extensionContexts) {
