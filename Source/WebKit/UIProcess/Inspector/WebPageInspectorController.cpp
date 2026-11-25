@@ -97,9 +97,10 @@ static String getTargetID(const ProvisionalFrameProxy& provisionalFrame)
     return FrameInspectorTarget::toTargetID(provisionalFrame.frame().frameID(), provisionalFrame.process().coreProcessIdentifier());
 }
 
-static std::string_view toStringView(const CString& string)
+static std::string_view toStringView(const UTF8CString& string)
 {
-    return { string.data(), string.length() };
+    auto characters = byteCast<char>(string.span());
+    return { characters.data(), characters.size() };
 }
 
 class LocalDiagnosticInspectorChannel final : public Inspector::FrontendChannel {
