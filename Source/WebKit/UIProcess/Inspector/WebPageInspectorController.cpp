@@ -34,6 +34,7 @@
 #include "ImageOptions.h"
 #include "InspectorBrowserAgent.h"
 #include "InspectorStorageAgent.h"
+#include "LocalDiagnosticInspectorPolicy.h"
 #include "PageInspectorTarget.h"
 #include "PageInspectorTargetProxy.h"
 #include "ProvisionalFrameProxy.h"
@@ -41,6 +42,7 @@
 #include "ProxyingNetworkAgent.h"
 #include "ProxyingPageAgent.h"
 #include "WebFrameProxy.h"
+#include "WebInspectorUIProxy.h"
 #include "WebPageInspectorAgentBase.h"
 #include "WebPageMessages.h"
 #include "WebPageProxy.h"
@@ -49,16 +51,23 @@
 #include <JavaScriptCore/InspectorAgentBase.h>
 #include <JavaScriptCore/InspectorBackendDispatcher.h>
 #include <JavaScriptCore/InspectorBackendDispatchers.h>
+#include <JavaScriptCore/InspectorFrontendChannel.h>
 #include <JavaScriptCore/InspectorFrontendRouter.h>
 #include <JavaScriptCore/InspectorProtocolObjects.h>
 #include <JavaScriptCore/InspectorTargetAgent.h>
 #include <WebCore/ImageUtilities.h>
+#include <algorithm>
+#include <limits>
+#include <span>
 #include <wtf/Assertions.h>
 #include <wtf/Borrow.h>
 #include <wtf/CheckedPtr.h>
 #include <wtf/HashMap.h>
+#include <wtf/JSONValues.h>
+#include <wtf/MainThread.h>
 #include <wtf/RefPtr.h>
 #include <wtf/RunLoop.h>
+#include <wtf/SetForScope.h>
 #include <wtf/TZoneMallocInlines.h>
 #include <wtf/TypeCasts.h>
 #include <wtf/Vector.h>
@@ -88,6 +97,120 @@ static String getTargetID(const ProvisionalFrameProxy& provisionalFrame)
     return FrameInspectorTarget::toTargetID(provisionalFrame.frame().frameID(), provisionalFrame.process().coreProcessIdentifier());
 }
 
+static std::string_view toStringView(const CString& string)
+{
+    return { string.data(), string.length() };
+}
+
+class LocalDiagnosticInspectorChannel final : public Inspector::FrontendChannel {
+    WTF_MAKE_TZONE_ALLOCATED_INLINE(LocalDiagnosticInspectorChannel);
+    WTF_MAKE_NONCOPYABLE(LocalDiagnosticInspectorChannel);
+public:
+    explicit LocalDiagnosticInspectorChannel(WTF::Function<void(const String&)>&& messageHandler)
+        : m_client(Client::create(WTF::move(messageHandler)))
+    {
+    }
+
+    ~LocalDiagnosticInspectorChannel() final
+    {
+        disconnect();
+    }
+
+    ConnectionType connectionType() const final { return ConnectionType::Local; }
+
+    void sendMessageToFrontend(const String& message) final
+    {
+        m_client->enqueue(message);
+    }
+
+    void disconnect()
+    {
+        m_client->disconnect();
+    }
+
+private:
+    class Client : public RefCounted<Client> {
+        WTF_MAKE_TZONE_ALLOCATED_INLINE(Client);
+    public:
+        static Ref<Client> create(WTF::Function<void(const String&)>&& messageHandler)
+        {
+            return adoptRef(*new Client(WTF::move(messageHandler)));
+        }
+
+        void enqueue(const String& message)
+        {
+            if (m_queue.enqueue(String { message })) {
+                RunLoop::mainSingleton().dispatch([protectedThis = Ref { *this }] {
+                    protectedThis->deliverPending();
+                });
+            }
+        }
+
+        void disconnect()
+        {
+            m_queue.disconnect();
+            if (!m_isDelivering)
+                m_messageHandler = { };
+        }
+
+    private:
+        explicit Client(WTF::Function<void(const String&)>&& messageHandler)
+            : m_messageHandler(WTF::move(messageHandler))
+        {
+        }
+
+        void deliverPending()
+        {
+            assertIsMainRunLoop();
+
+            if (!m_queue.isConnected()) {
+                m_messageHandler = { };
+                return;
+            }
+
+            bool shouldReschedule = false;
+            {
+                SetForScope delivering(m_isDelivering, true);
+                shouldReschedule = m_queue.drain(
+                    [&](const String& message) {
+                        m_messageHandler(message);
+                    },
+                    [&](size_t droppedCount, size_t totalDroppedCount) {
+                        auto clampToInt = [](size_t value) {
+                            return static_cast<int>(std::min<size_t>(value, static_cast<size_t>(std::numeric_limits<int>::max())));
+                        };
+                        auto params = JSON::Object::create();
+                        params->setInteger("droppedCount"_s, clampToInt(droppedCount));
+                        params->setInteger("totalDroppedCount"_s, clampToInt(totalDroppedCount));
+                        params->setInteger("maxPendingCallbacks"_s, clampToInt(m_queue.maxPendingCallbacks()));
+
+                        auto notification = JSON::Object::create();
+                        notification->setString("method"_s, String::fromLatin1(std::span { localDiagnosticQueueOverflowMethod.data(), localDiagnosticQueueOverflowMethod.size() }));
+                        notification->setObject("params"_s, WTF::move(params));
+                        m_messageHandler(notification->toJSONString());
+                    });
+            }
+
+            if (!m_queue.isConnected()) {
+                m_messageHandler = { };
+                return;
+            }
+
+            if (shouldReschedule) {
+                RunLoop::mainSingleton().dispatch([protectedThis = Ref { *this }] {
+                    protectedThis->deliverPending();
+                });
+            }
+        }
+
+        LocalDiagnosticCallbackQueue<String> m_queue { maxLocalDiagnosticPendingCallbacks, maxLocalDiagnosticDeliveryBatchSize };
+        WTF::Function<void(const String&)> m_messageHandler;
+        bool m_isDelivering { false };
+    };
+
+    const Ref<Client> m_client;
+};
+
 WTF_MAKE_TZONE_ALLOCATED_IMPL(WebPageInspectorController);
 
 WebPageInspectorController::WebPageInspectorController(WebPageProxy& inspectedPage)
@@ -102,6 +225,8 @@ WebPageInspectorController::WebPageInspectorController(WebPageProxy& inspectedPa
 
 WebPageInspectorController::~WebPageInspectorController()
 {
+    if (auto channel = std::exchange(m_localDiagnosticChannel, nullptr))
+        channel->disconnect();
     finishTimelineScreenshot();
 }
 
@@ -122,7 +247,14 @@ void WebPageInspectorController::pageClosed()
 
 bool WebPageInspectorController::hasLocalFrontend() const
 {
+    if (m_localDiagnosticChannel)
+        return false;
     return m_frontendRouter->hasLocalFrontend();
+}
+
+bool WebPageInspectorController::hasLocalDiagnosticClient() const
+{
+    return !!m_localDiagnosticChannel;
 }
 
 bool WebPageInspectorController::hasFrontends() const
@@ -132,6 +264,9 @@ bool WebPageInspectorController::hasFrontends() const
 
 void WebPageInspectorController::connectFrontend(Inspector::FrontendChannel& frontendChannel, bool, bool)
 {
+    if (m_localDiagnosticChannel && &frontendChannel != m_localDiagnosticChannel.get())
+        disconnectLocalDiagnosticClient();
+
     createLazyAgents();
 
     bool connectingFirstFrontend = !m_frontendRouter->hasFrontends();
@@ -184,6 +319,10 @@ void WebPageInspectorController::disconnectAllFrontends()
 {
     // FIXME: Handle a local inspector client.
 
+    auto localDiagnosticChannel = std::exchange(m_localDiagnosticChannel, nullptr);
+    if (localDiagnosticChannel)
+        localDiagnosticChannel->disconnect();
+
     if (!m_frontendRouter->hasFrontends())
         return;
 
@@ -205,6 +344,149 @@ void WebPageInspectorController::disconnectAllFrontends()
 #if ENABLE(REMOTE_INSPECTOR)
     inspectedPage->remoteInspectorInformationDidChange();
 #endif
+}
+
+bool WebPageInspectorController::connectLocalDiagnosticClient(WTF::Function<void(const String&)>&& messageHandler)
+{
+    assertIsMainRunLoop();
+
+    if (!messageHandler || !m_targetAgent || m_localDiagnosticChannel || m_frontendRouter->hasFrontends())
+        return false;
+
+    Ref inspectedPage = m_inspectedPage;
+    if (RefPtr inspector = inspectedPage->inspector(); inspector && inspector->isConnected())
+        return false;
+
+    m_localDiagnosticChannel = makeUnique<LocalDiagnosticInspectorChannel>(WTF::move(messageHandler));
+    connectFrontend(*m_localDiagnosticChannel);
+    return true;
+}
+
+void WebPageInspectorController::disconnectLocalDiagnosticClient()
+{
+    assertIsMainRunLoop();
+
+    auto channel = std::exchange(m_localDiagnosticChannel, nullptr);
+    if (!channel)
+        return;
+
+    channel->disconnect();
+    disconnectFrontend(*channel);
+}
+
+bool WebPageInspectorController::dispatchDiagnosticMessageFromLocalClient(String&& message)
+{
+    assertIsMainRunLoop();
+
+    if (!m_localDiagnosticChannel || !m_targetAgent)
+        return false;
+
+    auto canonicalMessage = validateLocalDiagnosticMessage(message);
+    if (!canonicalMessage)
+        return false;
+
+    dispatchMessageFromFrontend(*canonicalMessage);
+    return true;
+}
+
+std::optional<String> WebPageInspectorController::validateLocalDiagnosticMessage(const String& rawMessage) const
+{
+    if (rawMessage.isEmpty() || rawMessage.length() > maxLocalDiagnosticMessageLength)
+        return std::nullopt;
+
+    auto parsed = JSON::Value::parseJSON(rawMessage);
+    auto request = parsed ? parsed->asObject() : nullptr;
+    if (!request)
+        return std::nullopt;
+
+    for (auto& [key, value] : *request) {
+        UNUSED_PARAM(value);
+        if (!isAllowedLocalDiagnosticEnvelopeKey(toStringView(key.utf8())))
+            return std::nullopt;
+    }
+
+    auto id = request->getInteger("id"_s);
+    if (!id)
+        return std::nullopt;
+
+    auto method = request->getString("method"_s);
+    if (method.isEmpty())
+        return std::nullopt;
+
+    if (method == "Target.sendMessageToTarget"_s) {
+        auto params = request->getObject("params"_s);
+        if (!params || params->size() != 2)
+            return std::nullopt;
+
+        for (auto& [key, value] : *params) {
+            UNUSED_PARAM(value);
+            if (!isAllowedLocalDiagnosticTargetSendParamsKey(toStringView(key.utf8())))
+                return std::nullopt;
+        }
+
+        auto targetID = params->getString("targetId"_s);
+        if (targetID.isEmpty() || targetID.length() > maxLocalDiagnosticTargetIDLength)
+            return std::nullopt;
+        if (!decltype(m_targets)::isValidKey(targetID) || !m_targets.contains(targetID))
+            return std::nullopt;
+
+        auto innerRaw = params->getString("message"_s);
+        if (innerRaw.isEmpty() || innerRaw.length() > maxLocalDiagnosticInnerMessageLength)
+            return std::nullopt;
+
+        auto innerParsed = JSON::Value::parseJSON(innerRaw);
+        auto innerRequest = innerParsed ? innerParsed->asObject() : nullptr;
+        if (!innerRequest)
+            return std::nullopt;
+
+        for (auto& [key, value] : *innerRequest) {
+            UNUSED_PARAM(value);
+            if (!isAllowedLocalDiagnosticEnvelopeKey(toStringView(key.utf8())))
+                return std::nullopt;
+        }
+
+        auto innerID = innerRequest->getInteger("id"_s);
+        if (!innerID)
+            return std::nullopt;
+
+        auto innerMethod = innerRequest->getString("method"_s);
+        if (innerMethod.isEmpty() || !isAllowedLocalDiagnosticTargetMethod(toStringView(innerMethod.utf8())))
+            return std::nullopt;
+
+        if (innerRequest->find("params"_s) != innerRequest->end()) {
+            auto innerParams = innerRequest->getObject("params"_s);
+            if (!innerParams || innerParams->size())
+                return std::nullopt;
+        }
+
+        auto canonicalInner = JSON::Object::create();
+        canonicalInner->setInteger("id"_s, *innerID);
+        canonicalInner->setString("method"_s, innerMethod);
+
+        auto canonicalParams = JSON::Object::create();
+        canonicalParams->setString("targetId"_s, targetID);
+        canonicalParams->setString("message"_s, canonicalInner->toJSONString());
+
+        auto canonicalOuter = JSON::Object::create();
+        canonicalOuter->setInteger("id"_s, *id);
+        canonicalOuter->setString("method"_s, method);
+        canonicalOuter->setObject("params"_s, WTF::move(canonicalParams));
+        return canonicalOuter->toJSONString();
+    }
+
+    if (!isAllowedLocalDiagnosticDirectMethod(toStringView(method.utf8()), !!m_networkAgent, !!m_pageAgent))
+        return std::nullopt;
+
+    if (request->find("params"_s) != request->end()) {
+        auto params = request->getObject("params"_s);
+        if (!params || params->size())
+            return std::nullopt;
+    }
+
+    auto canonicalOuter = JSON::Object::create();
+    canonicalOuter->setInteger("id"_s, *id);
+    canonicalOuter->setString("method"_s, method);
+    return canonicalOuter->toJSONString();
 }
 
 void WebPageInspectorController::dispatchMessageFromFrontend(const String& message)

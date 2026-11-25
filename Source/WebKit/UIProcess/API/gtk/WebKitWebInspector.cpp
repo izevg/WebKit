@@ -23,9 +23,12 @@
 #include "WebInspectorUIProxy.h"
 #include "WebInspectorUIProxyClient.h"
 #include "WebKitWebInspectorPrivate.h"
+#include "WebPageInspectorController.h"
+#include "WebPageProxy.h"
 #include <glib/gi18n-lib.h>
 #include <wtf/TZoneMallocInlines.h>
 #include <wtf/glib/GRefPtr.h>
+#include <wtf/glib/GWeakPtr.h>
 #include <wtf/glib/WTFGType.h>
 #include <wtf/text/CString.h>
 
@@ -65,6 +68,7 @@ enum {
     CLOSED,
     ATTACH,
     DETACH,
+    DIAGNOSTIC_MESSAGE_RECEIVED,
 
     LAST_SIGNAL
 };
@@ -82,6 +86,8 @@ static std::array<GParamSpec*, N_PROPERTIES> sObjProperties;
 struct _WebKitWebInspectorPrivate {
     ~_WebKitWebInspectorPrivate()
     {
+        if (RefPtr inspectedPage = webInspector->inspectedPage())
+            inspectedPage->inspectorController().disconnectLocalDiagnosticClient();
         webInspector->setClient(nullptr);
     }
 
@@ -280,6 +286,27 @@ static void webkit_web_inspector_class_init(WebKitWebInspectorClass* findClass)
         g_signal_accumulator_true_handled, nullptr,
         g_cclosure_marshal_generic,
         G_TYPE_BOOLEAN, 0);
+
+    /**
+     * WebKitWebInspector::diagnostic-message-received:
+     * @inspector: the #WebKitWebInspector on which the signal is emitted
+     * @message: a JSON inspector protocol reply or event
+     *
+     * Emitted asynchronously on the main run loop when the local read-only
+     * diagnostic client receives a protocol reply or event. Disconnecting
+     * the local diagnostic client drops any undelivered messages.
+     *
+     * Since: 2.56
+     */
+    signals[DIAGNOSTIC_MESSAGE_RECEIVED] = g_signal_new(
+        "diagnostic-message-received",
+        G_TYPE_FROM_CLASS(gObjectClass),
+        G_SIGNAL_RUN_LAST,
+        0,
+        nullptr, nullptr,
+        g_cclosure_marshal_VOID__STRING,
+        G_TYPE_NONE, 1,
+        G_TYPE_STRING);
 }
 
 class WebKitInspectorClient final : public WebInspectorUIProxyClient {
@@ -539,4 +566,77 @@ guint webkit_web_inspector_get_attached_height(WebKitWebInspector* inspector)
     if (!inspector->priv->webInspector->isAttached())
         return 0;
     return inspector->priv->attachedHeight;
+}
+
+/**
+ * webkit_web_inspector_connect_local_diagnostic_client:
+ * @inspector: a #WebKitWebInspector
+ *
+ * Connects an in-process read-only diagnostic observer to the inspected page's
+ * Inspector controller. Protocol replies and events arrive asynchronously on
+ * the main run loop via #WebKitWebInspector::diagnostic-message-received.
+ *
+ * Returns: %TRUE if the local diagnostic client connected, or %FALSE if
+ *     another Inspector frontend or diagnostic client is already connected or
+ *     the inspected page is unavailable.
+ *
+ * Since: 2.56
+ */
+gboolean webkit_web_inspector_connect_local_diagnostic_client(WebKitWebInspector* inspector)
+{
+    g_return_val_if_fail(WEBKIT_IS_WEB_INSPECTOR(inspector), FALSE);
+
+    RefPtr inspectedPage = inspector->priv->webInspector->inspectedPage();
+    if (!inspectedPage)
+        return FALSE;
+
+    return inspectedPage->inspectorController().connectLocalDiagnosticClient([weakInspector = GWeakPtr<WebKitWebInspector> { inspector }](const String& message) {
+        if (GRefPtr<WebKitWebInspector> inspector = weakInspector.get())
+            g_signal_emit(inspector.get(), signals[DIAGNOSTIC_MESSAGE_RECEIVED], 0, message.utf8().data());
+    });
+}
+
+/**
+ * webkit_web_inspector_send_diagnostic_message:
+ * @inspector: a #WebKitWebInspector
+ * @message: a JSON inspector protocol subscription request
+ *
+ * Dispatches one allowlisted read-only Inspector subscription request from the
+ * connected local diagnostic client on the main thread.
+ *
+ * Returns: %TRUE if the request was validated and dispatched, or %FALSE
+ *     otherwise.
+ *
+ * Since: 2.56
+ */
+gboolean webkit_web_inspector_send_diagnostic_message(WebKitWebInspector* inspector, const char* message)
+{
+    g_return_val_if_fail(WEBKIT_IS_WEB_INSPECTOR(inspector), FALSE);
+    g_return_val_if_fail(message, FALSE);
+
+    RefPtr inspectedPage = inspector->priv->webInspector->inspectedPage();
+    if (!inspectedPage)
+        return FALSE;
+
+    return inspectedPage->inspectorController().dispatchDiagnosticMessageFromLocalClient(String::fromUTF8(message));
+}
+
+/**
+ * webkit_web_inspector_disconnect_local_diagnostic_client:
+ * @inspector: a #WebKitWebInspector
+ *
+ * Disconnects the local diagnostic client and cancels any queued callbacks
+ * immediately.
+ *
+ * Since: 2.56
+ */
+void webkit_web_inspector_disconnect_local_diagnostic_client(WebKitWebInspector* inspector)
+{
+    g_return_if_fail(WEBKIT_IS_WEB_INSPECTOR(inspector));
+
+    RefPtr inspectedPage = inspector->priv->webInspector->inspectedPage();
+    if (!inspectedPage)
+        return;
+
+    inspectedPage->inspectorController().disconnectLocalDiagnosticClient();
 }

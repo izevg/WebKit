@@ -471,6 +471,7 @@ if (ENABLE_WEBKIT)
 
         Tests/TestRunnerShared/TestFeaturesTests.cpp
 
+        Tests/WebKit/LocalDiagnosticInspectorPolicy.cpp
         Tests/WebKit/WKPage/AboutBlankLoad.cpp
         Tests/WebKit/WKPage/CanHandleRequest.cpp
         Tests/WebKit/WKPage/CloseFromWithinCreatePage.cpp
@@ -551,6 +552,7 @@ if (ENABLE_WEBKIT)
         ${WebCore_PRIVATE_FRAMEWORK_HEADERS_DIR}
         ${WebKit_FRAMEWORK_HEADERS_DIR}
         ${WebKit_PRIVATE_FRAMEWORK_HEADERS_DIR}
+        ${WEBKIT_DIR}/UIProcess/Inspector
     )
 
     set(TestWebKit_LIBRARIES

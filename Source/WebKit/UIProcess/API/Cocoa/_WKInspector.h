@@ -79,6 +79,30 @@ WK_CLASS_AVAILABLE(macos(10.14.4), ios(12.2))
  */
 - (void)attachToSide:(_WKInspectorAttachmentSide)side WK_API_AVAILABLE(macos(WK_MAC_TBA), ios(WK_IOS_TBA), visionos(WK_XROS_TBA));
 
+/**
+ * @abstract Connects an in-process read-only diagnostic observer to the
+ * inspected page's Inspector controller.
+ * @param messageHandler Receives protocol replies and events as JSON strings on
+ * the main run loop, asynchronously and in order. The block is copied.
+ * @result NO if another Inspector frontend or diagnostic client is already
+ * connected, or if the inspected page is unavailable.
+ */
+- (BOOL)connectLocalDiagnosticClient:(void (^)(NSString *message))messageHandler WK_API_AVAILABLE(macos(WK_MAC_TBA), ios(WK_IOS_TBA), visionos(WK_XROS_TBA));
+
+/**
+ * @abstract Dispatches one allowlisted read-only Inspector subscription command
+ * (JSON string) from the connected local diagnostic client. Main thread only.
+ * @result NO if no local diagnostic client is connected or if the message is
+ * malformed, oversized, or outside the read-only observation allowlist.
+ */
+- (BOOL)dispatchDiagnosticMessage:(NSString *)message WK_API_AVAILABLE(macos(WK_MAC_TBA), ios(WK_IOS_TBA), visionos(WK_XROS_TBA));
+
+/**
+ * @abstract Disconnects the local diagnostic client and cancels any queued
+ * callbacks immediately.
+ */
+- (void)disconnectLocalDiagnosticClient WK_API_AVAILABLE(macos(WK_MAC_TBA), ios(WK_IOS_TBA), visionos(WK_XROS_TBA));
+
 @end
 
 NS_ASSUME_NONNULL_END

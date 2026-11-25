@@ -31,6 +31,7 @@
 #import "WKWebViewInternal.h"
 #import "WebFrameProxy.h"
 #import "WebInspectorUIProxy.h"
+#import "WebPageInspectorController.h"
 #import "WebPageProxy.h"
 #import "WebProcessProxy.h"
 #import "_WKFrameHandleInternal.h"
@@ -39,6 +40,7 @@
 #import "_WKRemoteObjectRegistry.h"
 #import <WebCore/FrameIdentifier.h>
 #import <WebCore/WebCoreObjCExtras.h>
+#import <wtf/BlockPtr.h>
 #import <wtf/RetainPtr.h>
 #import <wtf/TZoneMallocInlines.h>
 #import <wtf/text/WTFString.h>
@@ -47,7 +49,6 @@
 #import "APIInspectorExtension.h"
 #import "WebInspectorUIExtensionControllerProxy.h"
 #import "_WKInspectorExtensionInternal.h"
-#import <wtf/BlockPtr.h>
 #endif
 
 class InspectorClient final : public API::InspectorClient {
@@ -219,6 +220,41 @@ private:
     }
 }
 
+- (BOOL)connectLocalDiagnosticClient:(void (^)(NSString *message))messageHandler
+{
+    if (!messageHandler)
+        return NO;
+
+    RefPtr inspectedPage = _inspector->inspectedPage();
+    if (!inspectedPage)
+        return NO;
+
+    return inspectedPage->inspectorController().connectLocalDiagnosticClient([handler = makeBlockPtr(messageHandler)](const String& message) {
+        handler(message.createNSString().get());
+    });
+}
+
+- (BOOL)dispatchDiagnosticMessage:(NSString *)message
+{
+    if (!message)
+        return NO;
+
+    RefPtr inspectedPage = _inspector->inspectedPage();
+    if (!inspectedPage)
+        return NO;
+
+    return inspectedPage->inspectorController().dispatchDiagnosticMessageFromLocalClient(String { message });
+}
+
+- (void)disconnectLocalDiagnosticClient
+{
+    RefPtr inspectedPage = _inspector->inspectedPage();
+    if (!inspectedPage)
+        return;
+
+    inspectedPage->inspectorController().disconnectLocalDiagnosticClient();
+}
+
 - (void)detach
 {
     protect(*_inspector)->detach();
@@ -263,7 +299,10 @@ private:
 {
     if (WebCoreObjCScheduleDeallocateOnMainRunLoop(_WKInspector.class, self))
         return;
-    
+
+    if (RefPtr inspectedPage = _inspector->inspectedPage())
+        inspectedPage->inspectorController().disconnectLocalDiagnosticClient();
+
     SUPPRESS_UNRETAINED_ARG _inspector->~WebInspectorUIProxy();
 
     [super dealloc];

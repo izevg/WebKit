@@ -54,6 +54,7 @@ namespace WebKit {
 class BrowsingContextGroup;
 class DebuggerPauseCoordinator;
 class InspectorBrowserAgent;
+class LocalDiagnosticInspectorChannel;
 class ProvisionalPageProxy;
 enum class ProvisionalLoadIsReplaced : bool;
 struct WebPageAgentContext;
@@ -69,6 +70,7 @@ public:
     void pageClosed();
 
     bool hasLocalFrontend() const;
+    bool hasLocalDiagnosticClient() const;
     bool hasFrontends() const;
 
     void frameDidPauseForDebugger(WebProcessProxy&, WebCore::FrameIdentifier);
@@ -84,6 +86,10 @@ public:
     void connectFrontend(Inspector::FrontendChannel&, bool isAutomaticInspection = false, bool immediatelyPause = false);
     void disconnectFrontend(Inspector::FrontendChannel&);
     void disconnectAllFrontends();
+
+    bool connectLocalDiagnosticClient(WTF::Function<void(const String&)>&& messageHandler);
+    bool dispatchDiagnosticMessageFromLocalClient(String&& message);
+    void disconnectLocalDiagnosticClient();
 
     void dispatchMessageFromFrontend(const String& message);
 
@@ -138,12 +144,15 @@ private:
 
     void finishTimelineScreenshot();
     void sendTimelineScreenshotRecord(double timestamp, const String& imageData);
+    std::optional<String> validateLocalDiagnosticMessage(const String&) const;
 
     const Ref<Inspector::FrontendRouter> m_frontendRouter;
     const Ref<Inspector::BackendDispatcher> m_backendDispatcher;
     Inspector::AgentRegistry m_agents;
 
     WeakRef<WebPageProxy> m_inspectedPage;
+
+    std::unique_ptr<LocalDiagnosticInspectorChannel> m_localDiagnosticChannel;
 
     CheckedPtr<Inspector::InspectorTargetAgent> m_targetAgent;
     HashMap<String, std::unique_ptr<InspectorTargetProxy>> m_targets;
