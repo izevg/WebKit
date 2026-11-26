@@ -91,8 +91,10 @@
 #include <wtf/MathExtras.h>
 #include <wtf/NeverDestroyed.h>
 #include <wtf/NotFound.h>
+#include <wtf/RunLoop.h>
 #include <wtf/glib/GLibExtras.h>
 #include <wtf/glib/GRefPtr.h>
+#include <wtf/glib/GWeakPtr.h>
 #include <wtf/glib/RunLoopSourcePriority.h>
 #include <wtf/glib/WTFGType.h>
 #include <wtf/text/CString.h>
@@ -328,6 +330,8 @@ struct _WebKitWebViewBasePrivate {
 #if USE(GTK4)
 #ifdef GTK_ACCESSIBILITY_ATSPI
     GRefPtr<GtkAccessible> socketAccessible;
+    bool socketAccessibleNeedsParentRefresh { false };
+    bool socketAccessibleParentRefreshPending { false };
 #endif
 #else
     GRefPtr<AtkObject> accessible;
@@ -435,12 +439,49 @@ static void webkitWebViewBaseCancelTouchSequences(WebKitWebViewBase*);
 #endif
 
 #if USE(GTK4) && defined(GTK_ACCESSIBILITY_ATSPI)
+static void webkitWebViewBaseSocketAccessibleStateChanged(GtkATContext* context, WebKitWebViewBase* webView)
+{
+    auto* priv = webView->priv;
+    if (!priv->socketAccessible)
+        return;
+
+    if (GRefPtr<GtkATContext> currentContext = adoptGRef(gtk_accessible_get_at_context(priv->socketAccessible.get())); currentContext.get() == context)
+        priv->socketAccessibleNeedsParentRefresh = false;
+}
+
 static GtkAccessible* webkitWebViewBaseAccessibleGetFirstAccessibleChild(GtkAccessible* accessible)
 {
     WebKitWebViewBase* webView = WEBKIT_WEB_VIEW_BASE(accessible);
+    auto* priv = webView->priv;
 
-    if (webView->priv->socketAccessible)
-        return GTK_ACCESSIBLE(g_object_ref(webView->priv->socketAccessible.get()));
+    if (priv->socketAccessible) {
+        if (priv->socketAccessibleNeedsParentRefresh && !priv->socketAccessibleParentRefreshPending) {
+            // GTK can call this getter while realizing the accessible parent.
+            priv->socketAccessibleParentRefreshPending = true;
+            RunLoop::mainSingleton().dispatch([weakWebView = GWeakPtr<WebKitWebViewBase>(webView), weakSocket = GWeakPtr<GtkAccessible>(priv->socketAccessible.get())] {
+                GRefPtr<WebKitWebViewBase> webView = weakWebView.get();
+                GRefPtr<GtkAccessible> socket = weakSocket.get();
+                if (!webView || !socket)
+                    return;
+
+                auto* priv = webView->priv;
+                if (priv->socketAccessible.get() != socket.get() || !priv->socketAccessibleParentRefreshPending)
+                    return;
+
+                if (priv->socketAccessibleNeedsParentRefresh && gtk_widget_get_root(GTK_WIDGET(webView.get()))) {
+                    gtk_accessible_set_accessible_parent(socket.get(), nullptr, nullptr);
+                    if (priv->socketAccessible.get() != socket.get())
+                        return;
+                    auto* widget = gtk_widget_get_first_child(GTK_WIDGET(webView.get()));
+                    gtk_accessible_set_accessible_parent(socket.get(), GTK_ACCESSIBLE(webView.get()), GTK_ACCESSIBLE(widget));
+                }
+
+                if (priv->socketAccessible.get() == socket.get())
+                    priv->socketAccessibleParentRefreshPending = false;
+            });
+        }
+        return GTK_ACCESSIBLE(g_object_ref(priv->socketAccessible.get()));
+    }
 
     if (auto* widget = gtk_widget_get_first_child(GTK_WIDGET(webView)))
         return GTK_ACCESSIBLE(g_object_ref(widget));
@@ -3686,6 +3727,8 @@ void webkitWebViewBaseSetPlugID(WebKitWebViewBase* webViewBase, const String& pl
         gtk_accessible_set_accessible_parent(priv->socketAccessible.get(), nullptr, nullptr);
         priv->socketAccessible = nullptr;
     }
+    priv->socketAccessibleNeedsParentRefresh = false;
+    priv->socketAccessibleParentRefreshPending = false;
 
     Vector<String> tokens = plugID.split(':');
     RELEASE_ASSERT(tokens.size() == 2);
@@ -3700,6 +3743,14 @@ void webkitWebViewBaseSetPlugID(WebKitWebViewBase* webViewBase, const String& pl
     priv->socketAccessible = adoptGRef(gtk_at_spi_socket_new(busName.legacyCStringPointer(), tokens[1].utf8().legacyCStringPointer(), &error.outPtr()));
 
     if (priv->socketAccessible) {
+        // GTK before 4.16.3 can strand a hidden socket when its parent is not yet realized.
+        // The socket reports a state change when a successful Embedded reply clears HIDDEN.
+        if (gtk_check_version(4, 16, 3)) {
+            if (GRefPtr<GtkATContext> atContext = adoptGRef(gtk_accessible_get_at_context(priv->socketAccessible.get()))) {
+                priv->socketAccessibleNeedsParentRefresh = true;
+                g_signal_connect_object(atContext.get(), "state-change", G_CALLBACK(webkitWebViewBaseSocketAccessibleStateChanged), webViewBase, static_cast<GConnectFlags>(0));
+            }
+        }
         auto* widget = gtk_widget_get_first_child(GTK_WIDGET(webViewBase));
         gtk_accessible_set_accessible_parent(priv->socketAccessible.get(), GTK_ACCESSIBLE(webViewBase), GTK_ACCESSIBLE(widget));
     } else
